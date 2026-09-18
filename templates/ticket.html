@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0B0F16">
+<title>{% if mode == 'receipt' %}Receipt{% else %}Vehicle pass{% endif %} — {{ business_name }}</title>
+<style>
+  :root{
+    --ink:#0B0F16; --panel:rgba(255,255,255,0.045); --edge:rgba(255,255,255,0.09);
+    --amber:#F2A93B; --free:#34D399; --occupied:#F1615C;
+    --text:#F3F6F9; --text-dim:#93A6BA; --text-faint:#5B6C80;
+    --font-display:'Space Grotesk','Segoe UI',sans-serif; --font-body:'Inter','Segoe UI',sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; background:var(--ink); color:var(--text);
+    font-family:var(--font-body); line-height:1.5; padding:22px 16px 44px;
+    background-image:radial-gradient(circle at 12% -10%, rgba(242,169,59,.18), transparent 55%),
+                     radial-gradient(circle at 92% 108%, rgba(52,211,153,.14), transparent 52%);
+  }
+  h1,h2{ font-family:var(--font-display); margin:0; }
+  .sheet{
+    max-width:520px; margin:0 auto; background:var(--panel); border:1px solid var(--edge);
+    border-radius:22px; padding:24px 22px 26px; backdrop-filter:blur(14px);
+  }
+  .sheet__eyebrow{ text-transform:uppercase; letter-spacing:.16em; font-size:11px; color:var(--text-faint); }
+  .sheet__title{ font-size:22px; margin:6px 0 4px; }
+  .sheet__sub{ color:var(--text-dim); font-size:13.5px; margin:0; }
+  .badge{
+    display:inline-flex; align-items:center; gap:7px; margin-top:14px; padding:6px 12px;
+    border-radius:999px; font-size:12.5px; font-weight:600; border:1px solid var(--edge);
+  }
+  .badge--live{ color:var(--free); background:rgba(52,211,153,.12); border-color:rgba(52,211,153,.35); }
+  .badge--paid{ color:var(--amber); background:rgba(242,169,59,.12); border-color:rgba(242,169,59,.35); }
+  .badge--error{ color:var(--occupied); background:rgba(241,97,92,.12); border-color:rgba(241,97,92,.35); }
+  .plate{
+    margin:20px 0 6px; padding:14px 16px; border-radius:15px; background:rgba(0,0,0,.28);
+    border:1px solid var(--edge); font-family:var(--font-display); font-size:30px;
+    letter-spacing:.12em; text-align:center; word-break:break-word;
+  }
+  .rows{ margin:14px 0 0; display:grid; gap:1px; }
+  .rows div{
+    display:flex; justify-content:space-between; gap:14px; padding:9px 2px;
+    border-bottom:1px dashed rgba(255,255,255,.07); font-size:13.5px;
+  }
+  .rows div:last-child{ border-bottom:0; }
+  .rows span{ color:var(--text-dim); }
+  .rows strong{ font-weight:600; text-align:right; }
+  .total{
+    display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding:13px 15px;
+    border-radius:15px; background:rgba(242,169,59,.1); border:1px solid rgba(242,169,59,.32);
+  }
+  .total span{ color:var(--text-dim); font-size:13px; }
+  .total strong{ font-family:var(--font-display); font-size:20px; }
+  .note{ margin:18px 0 0; font-size:12px; color:var(--text-faint); text-align:center; }
+  .error{ margin-top:6px; }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <span class="sheet__eyebrow">{{ business_name }}</span>
+
+  {% if error %}
+    <h1 class="sheet__title">Not available</h1>
+    <p class="sheet__sub error">{{ error }}</p>
+    <span class="badge badge--error">No details to show</span>
+    <p class="note">Keep your printed ticket or receipt, or ask the attendant at the exit booth.</p>
+
+  {% elif mode == 'receipt' %}
+    <h1 class="sheet__title">Payment receipt</h1>
+    <p class="sheet__sub">Receipt {{ receipt.receipt_number }}</p>
+    <span class="badge badge--paid">Paid &middot; verified</span>
+
+    <div class="plate">{{ receipt.registration_number }}</div>
+    <div class="rows">
+      <div><span>Vehicle type</span><strong>{{ receipt.vehicle_type }}</strong></div>
+      <div><span>Phone number</span><strong>{{ receipt.phone_number }}</strong></div>
+      <div><span>Check-in</span><strong>{{ receipt.checkin | stamp }}</strong></div>
+      <div><span>Checkout</span><strong>{{ receipt.checkout | stamp }}</strong></div>
+      <div><span>Payment date</span><strong>{{ receipt.date_time | stamp }}</strong></div>
+      <div><span>Method of payment</span><strong>{{ receipt.payment_method }}</strong></div>
+      {% if receipt.reference %}<div><span>Payment reference</span><strong>{{ receipt.reference }}</strong></div>{% endif %}
+      <div><span>Subtotal</span><strong>{{ receipt.currency }} {{ receipt.subtotal_amount }}</strong></div>
+      <div><span>VAT ({{ receipt.vat_rate }}%)</span><strong>{{ receipt.currency }} {{ receipt.vat_amount }}</strong></div>
+    </div>
+    <div class="total">
+      <span>Total paid</span>
+      <strong>{{ receipt.currency }} {{ receipt.total_amount }}</strong>
+    </div>
+    {% if receipt.business_address or receipt.kra_pin %}
+      <p class="note">{{ receipt.business_address }}{% if receipt.business_address and receipt.kra_pin %} &middot; {% endif %}{% if receipt.kra_pin %}KRA PIN: {{ receipt.kra_pin }}{% endif %}</p>
+    {% endif %}
+    <p class="note">This receipt is confirmed directly from the SmartPark payment record.</p>
+
+  {% else %}
+    <h1 class="sheet__title">Vehicle pass</h1>
+    <p class="sheet__sub">Slot {{ session.slot_number }} &middot; {{ business_name }}</p>
+    {% if session.status == 'completed' %}
+      <span class="badge badge--paid">Exited &middot; settled</span>
+    {% else %}
+      <span class="badge badge--live">Parked now</span>
+    {% endif %}
+
+    <div class="plate">{{ session.vehicle }}</div>
+    <div class="rows">
+      <div><span>Vehicle type</span><strong>{{ (session.vehicle_type or 'car') | capitalize }}</strong></div>
+      <div><span>Allocated slot</span><strong>{{ session.slot_number }}</strong></div>
+      <div><span>Check-in</span><strong>{{ session.entry_time | stamp }}</strong></div>
+      {% if session.exit_time %}<div><span>Checkout</span><strong>{{ session.exit_time | stamp }}</strong></div>{% endif %}
+      <div><span>Status</span><strong>{{ session.status | replace('_', ' ') | capitalize }}</strong></div>
+      {% if receipt %}
+        <div><span>Receipt no.</span><strong>{{ receipt.receipt_number }}</strong></div>
+        <div><span>Amount paid</span><strong>{{ receipt.currency }} {{ receipt.total_amount }}</strong></div>
+        <div><span>Method of payment</span><strong>{{ receipt.payment_method }}</strong></div>
+      {% endif %}
+    </div>
+    {% if not receipt %}
+      <p class="note">Parking fee is charged on exit &mdash; free for the first 30 minutes.</p>
+    {% endif %}
+    <p class="note">Present this page at the exit barrier if the ticket does not scan.</p>
+  {% endif %}
+</main>
+</body>
+</html>

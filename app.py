@@ -32,7 +32,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import requests
 import qrcode
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, request, render_template, send_file, session as user_session
+from flask import Flask, g, jsonify, request, render_template, send_file, url_for, session as user_session
 from docx import Document
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -143,6 +143,29 @@ def _ticket_secret():
     return (os.environ.get("FLASK_SECRET_KEY") or "smartpark-local-fallback-key").encode()
 
 
+def public_base_url():
+    """Base URL as the driver's phone sees it, honouring the reverse proxy.
+
+    Render terminates TLS in front of gunicorn, so ``request.url_root`` can
+    still report ``http://``. The forwarded scheme is used so a scanned QR
+    code opens the public https address instead of a broken one.
+    """
+    root = request.url_root.rstrip("/")
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip().lower()
+    if forwarded_proto == "https" and root.startswith("http://"):
+        root = "https://" + root[len("http://"):]
+    return root
+
+
+def receipt_link_token(session_id):
+    """Short HMAC for a receipt link so receipt urls cannot be enumerated.
+
+    The value only ever travels inside the QR image (never printed as text),
+    and it grants read access to one receipt.
+    """
+    return hmac.new(_ticket_secret(), f"receipt.{session_id}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
 def make_ticket_code(session):
     payload = f"{session['id']}.{session['vehicle']}"
     raw = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
@@ -150,8 +173,13 @@ def make_ticket_code(session):
     return f"{TICKET_PREFIX}-{raw}-{sig}"
 
 
-def resolve_ticket_code(code):
-    """Verify a signed ticket code and return its session, or (None, error)."""
+def resolve_ticket_code(code, require_active=True):
+    """Verify a signed ticket code and return its session, or (None, error).
+
+    ``require_active`` keeps the exit-panel contract (a ticket already used for
+    a completed exit is refused). The public scan page passes False so the
+    driver can still open the vehicle details after paying.
+    """
     code = (code or "").strip()
     if not code.upper().startswith(f"{TICKET_PREFIX}-"):
         return None, "Not a valid SmartPark ticket code."
@@ -170,7 +198,7 @@ def resolve_ticket_code(code):
         return None, "Ticket signature check failed."
     conn = get_connection()
     session = conn.execute(
-        "SELECT ps.*, v.plate_number AS vehicle, sl.slot_number "
+        "SELECT ps.*, v.plate_number AS vehicle, v.vehicle_type AS vehicle_type, sl.slot_number "
         "FROM parking_sessions ps "
         "JOIN vehicles v ON v.id = ps.vehicle_id "
         "JOIN parking_slots sl ON sl.id = ps.slot_id WHERE ps.id = ?",
@@ -179,13 +207,13 @@ def resolve_ticket_code(code):
     conn.close()
     if session is None or session["vehicle"] != plate:
         return None, "Ticket does not match any active vehicle."
-    if session["status"] not in ("active", "awaiting_payment"):
+    if require_active and session["status"] not in ("active", "awaiting_payment"):
         return None, "This ticket has already been used for a completed exit."
     return dict(session), None
 
 
-def ticket_qr_data_uri(code):
-    image = qrcode.make(code)
+def ticket_qr_data_uri(payload):
+    image = qrcode.make(payload)
     output = BytesIO()
     image.save(output, format="PNG")
     return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
@@ -363,6 +391,14 @@ def paypal_approval_url(order_id):
     return f"https://{host}/checkoutnow?token={order_id}"
 
 
+def mask_phone(phone):
+    """Show only the last 4 digits of a phone number (data minimisation)."""
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if len(digits) < 4:
+        return "—"
+    return f"***{digits[-4:]}"
+
+
 def get_receipt(session_id):
     conn = get_connection()
     try:
@@ -380,12 +416,10 @@ def get_receipt(session_id):
         conn.close()
     if row is None:
         return None
-    canonical = "|".join(str(row[key] or "") for key in (
-        "payment_id", "plate_number", "owner_phone", "vehicle_type", "entry_time",
-        "exit_time", "amount", "paid_at", "method",
-    ))
-    signature = hashlib.sha256(canonical.encode("utf-8")).hexdigest().upper()
-    verification_url = f"{request.url_root.rstrip('/')}/api/receipt/{row['id']}"
+    # The receipt is verified from server-side state (completed session with a
+    # successful payment). No hash/signature value is ever returned or printed:
+    # the QR carries an HMAC-signed link instead, so receipt ids stay unguessable.
+    verification_url = f"{public_base_url()}/receipt/{row['id']}?t={receipt_link_token(row['id'])}"
     qr_image = qrcode.make(verification_url)
     qr_output = BytesIO()
     qr_image.save(qr_output, format="PNG")
@@ -396,20 +430,20 @@ def get_receipt(session_id):
         "kra_pin": os.environ.get("KRA_PIN", ""),
         "receipt_number": row["receipt_number"],
         "registration_number": row["plate_number"],
-        "phone_number": row["owner_phone"],
+        "phone_number": mask_phone(row["owner_phone"]),
         "vehicle_type": row["vehicle_type"].capitalize(),
         "checkin": row["entry_time"],
         "checkout": row["exit_time"],
         "date_time": row["paid_at"],
         "amount_paid": row["amount"],
-            "subtotal_amount": row["subtotal_amount"] if row["subtotal_amount"] is not None else row["amount"],
+        "subtotal_amount": row["subtotal_amount"] if row["subtotal_amount"] is not None else row["amount"],
         "vat_rate": row["vat_rate"] or 0,
         "vat_amount": row["vat_amount"] or 0,
         "total_amount": row["total_amount"] or row["amount"],
         "currency": "KES",
         "payment_method": row["method"].upper(),
         "reference": row["provider_reference"] or row["reference"],
-        "electronic_signature": f"SHA256:{signature}",
+        "verified": True,
         "verification_url": verification_url,
         "qr_code": qr_code,
     }
@@ -696,6 +730,9 @@ def api_entry():
         return jsonify({"ok": False, "error": error}), 400
 
     ticket_code = make_ticket_code(session)
+    # The QR encodes the public ticket page (not the bare code) so any phone
+    # camera opens the vehicle details directly.
+    ticket_url = f"{public_base_url()}{url_for('ticket_page', code=ticket_code)}"
     barrier = algorithms.barrier_queue.request(
         {"id": session["id"], "status": "completed", "slot_number": session["slot_number"]}
     )
@@ -704,7 +741,8 @@ def api_entry():
         "message": f"Welcome {session['vehicle']}! Proceed to slot {session['slot_number']}.",
         "session": session,
         "ticket_code": ticket_code,
-        "ticket_qr": ticket_qr_data_uri(ticket_code),
+        "ticket_url": ticket_url,
+        "ticket_qr": ticket_qr_data_uri(ticket_url),
         "barrier": {"opened": True, "slot": session["slot_number"]},
     })
 
@@ -722,6 +760,64 @@ def api_ticket_resolve(code):
         "slot_number": session["slot_number"],
         "entry_time": session["entry_time"],
     })
+
+
+# ---------------------------------------------------------------------------
+# Public scan pages: the QR on an entry ticket / receipt opens these.
+# No login required — the entry ticket is HMAC-signed and the receipt link
+# carries its own HMAC token, so neither url can be guessed or enumerated.
+# ---------------------------------------------------------------------------
+def public_page_context(mode, session=None, receipt=None, error=None):
+    business_name = (receipt or {}).get("business_name") or os.environ.get("BUSINESS_NAME", "SmartPark KE")
+    return {
+        "mode": mode,
+        "session": session,
+        "receipt": receipt,
+        "error": error,
+        "business_name": business_name,
+    }
+
+
+@app.template_filter("stamp")
+def format_stamp(value):
+    """Render an ISO timestamp for the public scan pages (scan-friendly text)."""
+    if not value:
+        return "—"
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.strftime("%d %b %Y, %H:%M UTC")
+
+
+@app.route("/ticket/<code>")
+def ticket_page(code):
+    """Vehicle details page opened by scanning the entry ticket QR."""
+    session, error = resolve_ticket_code(code, require_active=False)
+    if error:
+        return render_template("ticket.html", **public_page_context("ticket", error=error)), 404
+    receipt = get_receipt(session["id"]) if session["status"] == "completed" else None
+    return render_template("ticket.html", **public_page_context("ticket", session=session, receipt=receipt))
+
+
+@app.route("/receipt/<int:session_id>")
+def receipt_page(session_id):
+    """Receipt page opened by scanning the receipt QR (signed link required)."""
+    token = request.args.get("t", "")
+    if not token or not secrets.compare_digest(token, receipt_link_token(session_id)):
+        return render_template(
+            "ticket.html",
+            **public_page_context("receipt", error="This receipt link is invalid. Please ask the attendant for a printed receipt."),
+        ), 403
+    receipt = get_receipt(session_id)
+    if receipt is None:
+        return render_template(
+            "ticket.html",
+            **public_page_context("receipt", error="Receipt is not available until payment is successful."),
+        ), 404
+    return render_template("ticket.html", **public_page_context("receipt", receipt=receipt))
 
 
 # ---------------------------------------------------------------------------

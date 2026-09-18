@@ -40,9 +40,9 @@
     <div class="receipt-card__number" id="receipt-number">Receipt —</div>
     <div class="receipt-card__details" id="receipt-details"></div>
     <div class="receipt-card__signature">
-      <span>Electronic signature</span>
+      <span>Verification</span>
       <strong class="receipt-card__signature-mark">SmartPark KE</strong>
-      <code id="receipt-signature">—</code>
+      <code id="receipt-verified">Verified</code>
     </div>
     <div class="receipt-card__qr">
       <img id="receipt-qr" alt="Scan to verify this receipt">
@@ -399,9 +399,10 @@
     <div class="profile-card__head"><div><span class="section-kicker">Entry ticket</span><h2 id="ticket-title">Scan at exit</h2></div><button type="button" class="page-btn" id="ticket-close">Close</button></div>
     <div class="ticket">
       <img id="ticket-qr" alt="Entry ticket QR code">
-      <p class="rate-panel__hint">This QR encodes a signed ticket. At the exit panel, paste the code (or scan it) to auto-fill the plate.</p>
+      <p class="rate-panel__hint">This QR opens a page with the vehicle details — scan it with any phone camera. At the exit panel, paste the code (or scan it) to auto-fill the plate.</p>
       <code id="ticket-code" class="ticket__code"></code>
       <button type="button" class="page-btn" id="ticket-copy">Copy ticket code</button>
+      <a class="page-btn" id="ticket-open" href="#" target="_blank" rel="noopener" hidden>Open details page</a>
     </div>
   </section>
 </div>

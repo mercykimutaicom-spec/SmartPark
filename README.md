@@ -33,7 +33,9 @@ University of Kenya.
 - **Payment & barrier control** — the barrier only opens once payment is
   confirmed (or immediately, for the free tier).
 - **Entry ticket QR** — every check-in issues an HMAC-signed ticket code plus
-  a QR image. At the exit panel, paste or scan the code to auto-fill the plate.
+  a QR image. Scanning it with any phone camera opens a public vehicle-details
+  page (plate, allocated slot, check-in time, live status); at the exit panel,
+  paste or scan the code to auto-fill the plate.
 - **Attendant overrides** — managers can take a bay out of service (e.g. jammed
   lock) or replay the barrier open signal for an already-paid session. Every
   override is written to the `override_events` audit trail with who/when/why.
@@ -47,7 +49,9 @@ University of Kenya.
 - **Management rate editor** — authorized staff can update time limits and
   fees from the dashboard; changes apply to the next checkout.
 - **Audit and reporting** — every paid session has a receipt number, payment
-  method, electronic signature, QR verification, and Excel/PDF/Word exports.
+  method, QR verification, and Excel/PDF/Word exports. Receipts print the
+  transaction detail only: no hash or signature value is ever shown, and the
+  receipt QR carries a signed link so receipt urls cannot be enumerated.
 
 ## Algorithms (DSA design → code)
 

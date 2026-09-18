@@ -608,6 +608,9 @@
     if (!lastTicketCode) return;
     document.getElementById("ticket-qr").src = data.ticket_qr;
     document.getElementById("ticket-code").textContent = lastTicketCode;
+    const openLink = document.getElementById("ticket-open");
+    if (data.ticket_url) { openLink.href = data.ticket_url; openLink.hidden = false; }
+    else { openLink.hidden = true; }
     document.getElementById("ticket-modal").hidden = false;
   }
   document.getElementById("ticket-close").addEventListener("click", () => {
@@ -906,7 +909,7 @@
     document.getElementById("receipt-business-details").textContent = [receipt.business_address, receipt.kra_pin ? `KRA PIN: ${receipt.kra_pin}` : ""].filter(Boolean).join(" | ");
     document.getElementById("receipt-details").innerHTML = details.map(([label, value]) =>
       `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-    document.getElementById("receipt-signature").textContent = receipt.electronic_signature;
+    document.getElementById("receipt-verified").textContent = receipt.verified ? "Verified payment" : "Unverified";
     document.getElementById("receipt-qr").src = receipt.qr_code;
     document.getElementById("receipt-modal").hidden = false;
   }

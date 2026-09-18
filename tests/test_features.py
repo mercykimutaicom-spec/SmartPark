@@ -1,7 +1,9 @@
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import db
 import algorithms
@@ -106,19 +108,37 @@ class SmartParkFeatureTests(unittest.TestCase):
         self._cleanup_plates("PLTSEARCH1")
 
     def _cleanup_plates(self, *plates):
+        """Remove test vehicles and everything that references them.
+
+        payments -> parking_sessions -> vehicles must be deleted in that order
+        (foreign keys), and the bays those sessions held are released again.
+        The connection is always closed so a failure can never leave a write
+        lock behind for the next test.
+        """
         conn = db.get_connection()
-        marks = tuple(plates)
-        conn.execute(
-            "DELETE FROM parking_sessions WHERE vehicle_id IN "
-            f"(SELECT id FROM vehicles WHERE plate_number IN ({','.join('?' * len(marks))}))",
-            marks,
-        )
-        conn.execute(
-            f"DELETE FROM vehicles WHERE plate_number IN ({','.join('?' * len(marks))})",
-            marks,
-        )
-        conn.commit()
-        conn.close()
+        try:
+            marks = tuple(plates)
+            placeholders = ",".join("?" * len(marks))
+            sessions = conn.execute(
+                "SELECT id, slot_id FROM parking_sessions WHERE vehicle_id IN "
+                f"(SELECT id FROM vehicles WHERE plate_number IN ({placeholders}))",
+                marks,
+            ).fetchall()
+            if sessions:
+                session_ids = tuple(row["id"] for row in sessions)
+                session_marks = ",".join("?" * len(session_ids))
+                conn.execute(f"DELETE FROM payments WHERE session_id IN ({session_marks})", session_ids)
+                conn.execute(f"DELETE FROM parking_sessions WHERE id IN ({session_marks})", session_ids)
+                for row in sessions:
+                    conn.execute(
+                        "UPDATE parking_slots SET status = 'available' "
+                        "WHERE id = ? AND status = 'occupied'",
+                        (row["slot_id"],),
+                    )
+            conn.execute(f"DELETE FROM vehicles WHERE plate_number IN ({placeholders})", marks)
+            conn.commit()
+        finally:
+            conn.close()
         self.algorithms.load_heaps_from_db()
 
     # ---- Entry ticket QR -------------------------------------------------------
@@ -137,6 +157,75 @@ class SmartParkFeatureTests(unittest.TestCase):
         tampered = client.get("/api/ticket/" + code[:-2] + "zz")
         self.assertEqual(tampered.status_code, 400)
         self._cleanup_plates("TICKETQR1")
+
+    # ---- Receipt / ticket scan pages -------------------------------------------
+    def _park_and_pay(self, plate, phone):
+        session, error = self.algorithms.register_entry(plate, "car", phone)
+        self.assertIsNone(error)
+        conn = db.get_connection()
+        conn.execute(
+            "UPDATE parking_sessions SET entry_time = ? WHERE id = ?",
+            ((datetime.now(timezone.utc) - timedelta(minutes=95)).isoformat(), session["id"]),
+        )
+        conn.commit()
+        conn.close()
+        exited, err = self.algorithms.process_exit(plate)
+        self.assertIsNone(err)
+        settled, err2 = self.algorithms.settle_payment(exited["id"], "cash", f"CASH-{plate}")
+        self.assertIsNone(err2)
+        return settled
+
+    def test_receipt_hides_signature_hash_and_needs_signed_link(self):
+        client = self.app.test_client()
+        settled = self._park_and_pay("RCPTHASH1", "0700000061")
+        response = client.get(f"/api/receipt/{settled['id']}")
+        self.assertEqual(response.status_code, 200)
+        receipt = response.json["receipt"]
+        # No signature/hash is ever returned...
+        self.assertNotIn("electronic_signature", receipt)
+        self.assertIs(receipt["verified"], True)
+        digest = re.compile(r"\b[0-9a-fA-F]{64}\b")
+        for key, value in receipt.items():
+            if isinstance(value, str) and key != "qr_code":
+                self.assertIsNone(digest.search(value), f"{key} leaked a hash value")
+        # ...the printed phone number is minimised...
+        self.assertTrue(receipt["phone_number"].startswith("***"))
+        # ...and the QR points at the public receipt page with a signed token.
+        link = urlsplit(receipt["verification_url"])
+        self.assertEqual(link.path, f"/receipt/{settled['id']}")
+        self.assertTrue(link.query.startswith("t="))
+        page = client.get(f"{link.path}?{link.query}")
+        self.assertEqual(page.status_code, 200)
+        body = page.data.decode("utf-8")
+        self.assertIn("RCPTHASH1", body)
+        self.assertIsNone(digest.search(body), "receipt page leaked a hash value")
+        # Receipt ids cannot be enumerated without the token.
+        self.assertEqual(client.get(f"/receipt/{settled['id']}").status_code, 403)
+        self.assertEqual(client.get(f"/receipt/{settled['id']}?t=not-a-real-token").status_code, 403)
+        self.assertEqual(client.get("/receipt/999999?t=" + "0" * 32).status_code, 403)
+        self._cleanup_plates("RCPTHASH1")
+
+    def test_ticket_qr_opens_vehicle_details_page(self):
+        client = self.app.test_client()
+        entry = client.post("/api/entry", json={
+            "plate_number": "TICKETPG1", "vehicle_type": "car", "owner_phone": "0700000071",
+        })
+        self.assertEqual(entry.status_code, 200)
+        ticket_url = entry.json["ticket_url"]
+        self.assertIn("/ticket/", ticket_url)
+        self.assertIn("/ticket/", urlsplit(ticket_url).path)
+        page = client.get(urlsplit(ticket_url).path)
+        self.assertEqual(page.status_code, 200)
+        body = page.data.decode("utf-8")
+        self.assertIn("TICKETPG1", body)                                   # plate
+        self.assertIn("Vehicle pass", body)                                # vehicle details page
+        self.assertIn(str(entry.json["session"]["slot_number"]), body)     # allocated slot
+        self.assertIn("Check-in", body)                                    # entry time
+        # A tampered ticket shows the "not available" page, never vehicle details.
+        tampered = client.get("/ticket/" + entry.json["ticket_code"][:-2] + "zz")
+        self.assertEqual(tampered.status_code, 404)
+        self.assertNotIn("TICKETPG1", tampered.data.decode("utf-8"))
+        self._cleanup_plates("TICKETPG1")
 
     # ---- Attendant overrides ----------------------------------------------------
     def test_slot_maintenance_toggle_and_allocation_exclusion(self):
