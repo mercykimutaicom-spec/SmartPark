@@ -6,6 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#0B0F16">
 <title>{% if mode == 'receipt' %}Receipt{% else %}Vehicle pass{% endif %} — {{ business_name }}</title>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
 <style>
   :root{
     --ink:#0B0F16; --panel:rgba(255,255,255,0.045); --edge:rgba(255,255,255,0.09);
@@ -26,6 +27,7 @@
     border-radius:22px; padding:24px 22px 26px; backdrop-filter:blur(14px);
   }
   .sheet__eyebrow{ text-transform:uppercase; letter-spacing:.16em; font-size:11px; color:var(--text-faint); }
+  .sheet__mark{ display:block; margin:0 0 10px; }
   .sheet__title{ font-size:22px; margin:6px 0 4px; }
   .sheet__sub{ color:var(--text-dim); font-size:13.5px; margin:0; }
   .badge{
@@ -60,6 +62,7 @@
 </head>
 <body>
 <main class="sheet">
+  <img class="sheet__mark" src="{{ url_for('static', filename='img/mark.svg') }}" width="34" height="34" alt="">
   <span class="sheet__eyebrow">{{ business_name }}</span>
 
   {% if error %}

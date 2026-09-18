@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from xml.etree import ElementTree
 
 import db
 import algorithms
@@ -225,7 +226,25 @@ class SmartParkFeatureTests(unittest.TestCase):
         tampered = client.get("/ticket/" + entry.json["ticket_code"][:-2] + "zz")
         self.assertEqual(tampered.status_code, 404)
         self.assertNotIn("TICKETPG1", tampered.data.decode("utf-8"))
+        # The public page carries the brand mark + favicon like the main app.
+        self.assertIn("/static/img/mark.svg", body)
+        self.assertIn("/static/img/favicon.svg", body)
         self._cleanup_plates("TICKETPG1")
+
+    # ---- Brand assets (SVG) ------------------------------------------------------
+    def test_brand_svg_assets_are_served_and_well_formed(self):
+        client = self.app.test_client()
+        for name in ("mark.svg", "favicon.svg"):
+            response = client.get(f"/static/img/{name}")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.mimetype, "image/svg+xml")
+            root = ElementTree.fromstring(response.data)  # raises if malformed
+            self.assertEqual(root.get("viewBox"), "0 0 64 64")
+
+    def test_index_links_favicon_and_brand_mark(self):
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        self.assertIn("/static/img/favicon.svg", html)
+        self.assertIn("/static/img/mark.svg", html)
 
     # ---- Attendant overrides ----------------------------------------------------
     def test_slot_maintenance_toggle_and_allocation_exclusion(self):

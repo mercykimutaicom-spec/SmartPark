@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
 </head>
 <body>
 
@@ -89,10 +90,7 @@
   <div class="topbar__inner">
     <div class="brand">
       <span class="brand__mark">
-        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-          <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--amber)"/>
-          <path d="M11 8h7.2c3.4 0 5.8 2.2 5.8 5.4 0 3.2-2.4 5.4-5.8 5.4H14.6V24H11V8zm3.6 3v4.8h3.4c1.6 0 2.7-1 2.7-2.4s-1.1-2.4-2.7-2.4h-3.4z" fill="var(--ink)"/>
-        </svg>
+        <img src="{{ url_for('static', filename='img/mark.svg') }}" width="26" height="26" alt="">
       </span>
       <div class="brand__text">
         <span class="brand__name">SmartPark <em>KE</em></span>
