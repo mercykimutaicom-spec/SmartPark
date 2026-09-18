@@ -263,28 +263,38 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0")
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        if conn.execute("SELECT COUNT(*) AS n FROM parking_rates").fetchone()["n"] == 0:
-            conn.executemany(
-                "INSERT INTO parking_rates (max_minutes, fee_amount, updated_at) VALUES (?, ?, ?)",
-                [(30, 0, now), (120, 50, now), (240, 100, now), (360, 300, now), (2147483647, 500, now)],
+        # Race-safe reference seed: concurrent gunicorn workers booting at
+        # once must not hit UNIQUE violations (same fix as the SQLite path).
+        for max_minutes, fee_amount in [(30, 0), (120, 50), (240, 100), (360, 300), (2147483647, 500)]:
+            conn.execute(
+                "INSERT INTO parking_rates (max_minutes, fee_amount, updated_at) "
+                "VALUES (?, ?, ?) ON CONFLICT(max_minutes) DO NOTHING",
+                (max_minutes, fee_amount, now),
             )
-        if conn.execute("SELECT COUNT(*) AS n FROM tax_settings").fetchone()["n"] == 0:
-            conn.execute("INSERT INTO tax_settings (id, vat_rate, updated_at) VALUES (1, 16, ?)", (now,))
+        conn.execute(
+            "INSERT INTO tax_settings (id, vat_rate, updated_at) VALUES (1, 16, ?) "
+            "ON CONFLICT(id) DO NOTHING",
+            (now,),
+        )
         admin_username = os.environ.get("ADMIN_USERNAME")
         admin_password = os.environ.get("ADMIN_PASSWORD")
         if admin_username and admin_password and not conn.execute(
             "SELECT 1 FROM users WHERE username = ?", (admin_username,)
         ).fetchone():
-            conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'manager', ?)",
-                (admin_username, generate_password_hash(admin_password), now),
-            )
+            try:
+                conn.execute(
+                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'manager', ?)",
+                    (admin_username, generate_password_hash(admin_password), now),
+                )
+            except Exception:
+                conn.rollback()  # sibling worker won the race; safe to continue
         if conn.execute("SELECT COUNT(*) AS n FROM parking_slots").fetchone()["n"] == 0:
             slot_number = 1
             for vtype, count in LOT_LAYOUT.items():
                 for _ in range(count):
                     conn.execute(
-                        "INSERT INTO parking_slots (slot_number, zone, vehicle_type, status) VALUES (?, ?, ?, 'available')",
+                        "INSERT INTO parking_slots (slot_number, zone, vehicle_type, status) "
+                        "VALUES (?, ?, ?, 'available') ON CONFLICT(slot_number) DO NOTHING",
                         (slot_number, ZONE_OF_TYPE[vtype], vtype),
                     )
                     slot_number += 1
@@ -292,29 +302,37 @@ def init_db():
         conn.close()
         return
     conn.executescript(SCHEMA_SQL)
-    rate_count = conn.execute("SELECT COUNT(*) AS n FROM parking_rates").fetchone()["n"]
-    if rate_count == 0:
-        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        conn.executemany(
-            "INSERT INTO parking_rates (max_minutes, fee_amount, updated_at) VALUES (?, ?, ?)",
-            [(30, 0, now), (120, 50, now), (240, 100, now), (360, 300, now), (2147483647, 500, now)],
-        )
-    tax_count = conn.execute("SELECT COUNT(*) AS n FROM tax_settings").fetchone()["n"]
-    if tax_count == 0:
+    # Idempotent reference seed: safe when 2+ gunicorn workers boot at once
+    # (check-then-insert races previously caused UNIQUE failures on restart).
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    for max_minutes, fee_amount in [(30, 0), (120, 50), (240, 100), (360, 300), (2147483647, 500)]:
         conn.execute(
-            "INSERT INTO tax_settings (id, vat_rate, updated_at) VALUES (1, 16, ?)",
-            (datetime.now(timezone.utc).replace(microsecond=0).isoformat(),),
+            "INSERT INTO parking_rates (max_minutes, fee_amount, updated_at) "
+            "VALUES (?, ?, ?) ON CONFLICT(max_minutes) DO NOTHING",
+            (max_minutes, fee_amount, now),
         )
+    conn.execute(
+        "INSERT INTO tax_settings (id, vat_rate, updated_at) VALUES (1, 16, ?) "
+        "ON CONFLICT(id) DO NOTHING",
+        (now,),
+    )
+    conn.commit()
+    # Admin bootstrap: also race-safe (UNIQUE username guard via pre-check
+    # inside the same transaction + UNIQUE constraint as backstop).
     admin_username = os.environ.get("ADMIN_USERNAME")
     admin_password = os.environ.get("ADMIN_PASSWORD")
     if admin_username and admin_password and not conn.execute(
         "SELECT 1 FROM users WHERE username = ?", (admin_username,)
     ).fetchone():
-        conn.execute(
-            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'manager', ?)",
-            (admin_username, generate_password_hash(admin_password),
-             datetime.now(timezone.utc).replace(microsecond=0).isoformat()),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'manager', ?)",
+                (admin_username, generate_password_hash(admin_password),
+                 datetime.now(timezone.utc).replace(microsecond=0).isoformat()),
+            )
+        except Exception:
+            conn.rollback()  # lost the race to a sibling worker; safe to continue
+    conn.commit()
     payment_columns = {row["name"] for row in conn.execute("PRAGMA table_info(payments)")}
     user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
     user_migrations = {
@@ -351,6 +369,7 @@ def init_db():
     )
     conn.commit()
 
+    # Slot layout seed: ON CONFLICT(slot_number) makes concurrent boots safe.
     existing = conn.execute("SELECT COUNT(*) AS n FROM parking_slots").fetchone()["n"]
     if existing == 0:
         slot_number = 1
@@ -359,7 +378,7 @@ def init_db():
             for _ in range(count):
                 conn.execute(
                     "INSERT INTO parking_slots (slot_number, zone, vehicle_type, status) "
-                    "VALUES (?, ?, ?, 'available')",
+                    "VALUES (?, ?, ?, 'available') ON CONFLICT(slot_number) DO NOTHING",
                     (slot_number, zone, vtype),
                 )
                 slot_number += 1
