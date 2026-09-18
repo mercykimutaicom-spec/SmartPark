@@ -41,7 +41,23 @@ except ImportError:  # PostgreSQL is optional for local SQLite development.
     dict_row = None
 
 DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", Path(__file__).parent / "smartpark.db"))
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+
+def resolve_database_url():
+    """Read DATABASE_URL fresh from the environment on every call.
+
+    Render injects it at runtime (internal URL has no sslmode; external
+    URLs need ?sslmode=require). Normalizes the legacy ``postgres://``
+    scheme to ``postgresql://`` so both psycopg and libpq accept it.
+    Returns "" when unset (SQLite fallback).
+    """
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    return url
+
+
+DATABASE_URL = resolve_database_url()
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS parking_slots (
@@ -225,10 +241,13 @@ ZONE_OF_TYPE = {"car": "A", "motorcycle": "B", "van": "C"}
 
 def get_connection():
     """One connection per call; Flask wraps this per-request (see app.py)."""
-    if DATABASE_URL:
+    database_url = resolve_database_url() or DATABASE_URL
+    if database_url:
         if psycopg is None:
             raise RuntimeError("PostgreSQL is configured but psycopg is not installed.")
-        return PostgresConnection(psycopg.connect(DATABASE_URL, row_factory=dict_row))
+        conn = psycopg.connect(database_url, row_factory=dict_row)
+        conn.execute("SET statement_timeout = '15s'")
+        return PostgresConnection(conn)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -238,7 +257,8 @@ def get_connection():
 def init_db():
     """Create tables if they don't exist, and seed slots on first run."""
     conn = get_connection()
-    if DATABASE_URL:
+    use_postgres = bool(resolve_database_url() or DATABASE_URL)
+    if use_postgres:
         conn.executescript(POSTGRES_SCHEMA_SQL)
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0")
