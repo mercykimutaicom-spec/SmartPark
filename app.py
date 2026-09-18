@@ -30,7 +30,6 @@ from decimal import Decimal, ROUND_HALF_UP
 
 import requests
 import qrcode
-import pyotp
 from dotenv import load_dotenv
 from flask import Flask, g, jsonify, request, render_template, send_file, session as user_session
 from docx import Document
@@ -445,19 +444,18 @@ def auth_login():
     conn.close()
     if user is None or not check_password_hash(user["password_hash"], password):
         return jsonify({"ok": False, "error": "Invalid sign-in details."}), 401
-    mfa_code = str(data.get("mfa_code") or "").replace(" ", "")
-    if user["mfa_enabled"]:
-        if not mfa_code or not user["mfa_secret"] or not pyotp.TOTP(user["mfa_secret"]).verify(mfa_code, valid_window=1):
-            return jsonify({"ok": False, "mfa_required": True, "error": "Enter the verification code from your authenticator app."}), 401
+    # MFA gate removed: accounts sign in with username + password only.
+    # Existing mfa_secret/mfa_enabled columns are ignored (kept for schema
+    # compatibility, never enforced).
     create_authenticated_session(user, request)
-    return jsonify({"ok": True, "user": {"username": user["username"], "role": user["role"], "mfa_enabled": bool(user["mfa_enabled"])}})
+    return jsonify({"ok": True, "user": {"username": user["username"], "role": user["role"], "mfa_enabled": False}})
 
 
 @app.route("/api/auth/me")
 def auth_me():
     user = current_authenticated_user()
     return jsonify({"authenticated": bool(user),
-                    "user": {"username": user["username"], "role": user["role"], "mfa_enabled": bool(user["mfa_enabled"])}
+                    "user": {"username": user["username"], "role": user["role"], "mfa_enabled": False}
                     if user else None})
 
 
@@ -479,12 +477,18 @@ def profile():
     user = current_authenticated_user()
     conn = get_connection()
     sessions = conn.execute(
-        "SELECT id, created_at, last_seen, expires_at, user_agent, ip_address, revoked "
+        "SELECT id, created_at, last_seen, expires_at, user_agent, ip_address, revoked, token_hash "
         "FROM active_sessions WHERE user_id = ? ORDER BY last_seen DESC", (user["id"],)
     ).fetchall()
     conn.close()
-    return jsonify({"user": {"username": user["username"], "role": user["role"], "mfa_enabled": bool(user["mfa_enabled"])},
-                    "sessions": [dict(row) for row in sessions]})
+    current_hash = session_token_hash(user_session.get("session_token", ""))
+    visible = []
+    for row in sessions:
+        item = dict(row)
+        item["current"] = (item.pop("token_hash", None) == current_hash)
+        visible.append(item)
+    return jsonify({"user": {"username": user["username"], "role": user["role"], "mfa_enabled": False},
+                    "sessions": visible})
 
 
 @app.route("/api/profile", methods=["PUT"])
@@ -519,42 +523,20 @@ def update_profile():
 @app.route("/api/profile/mfa/setup", methods=["POST"])
 @require_role()
 def setup_mfa():
-    user = current_authenticated_user()
-    secret = pyotp.random_base32()
-    conn = get_connection()
-    conn.execute("UPDATE users SET mfa_secret = ?, mfa_enabled = 0 WHERE id = ?", (secret, user["id"]))
-    conn.commit()
-    conn.close()
-    uri = pyotp.TOTP(secret).provisioning_uri(name=user["username"], issuer_name="SmartPark KE")
-    return jsonify({"ok": True, "secret": secret, "otpauth_uri": uri})
+    # MFA removed: kept as a no-op so old UI builds fail loudly, not silently.
+    return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
 
 
 @app.route("/api/profile/mfa/enable", methods=["POST"])
 @require_role()
 def enable_mfa():
-    user = current_authenticated_user()
-    code = str((request.get_json(force=True) or {}).get("code") or "").replace(" ", "")
-    if not user["mfa_secret"] or not pyotp.TOTP(user["mfa_secret"]).verify(code, valid_window=1):
-        return jsonify({"ok": False, "error": "Invalid authenticator code."}), 400
-    conn = get_connection()
-    conn.execute("UPDATE users SET mfa_enabled = 1 WHERE id = ?", (user["id"],))
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "mfa_enabled": True})
+    return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
 
 
 @app.route("/api/profile/mfa/disable", methods=["POST"])
 @require_role()
 def disable_mfa():
-    user = current_authenticated_user()
-    data = request.get_json(force=True) or {}
-    if not check_password_hash(user["password_hash"], str(data.get("current_password") or "")):
-        return jsonify({"ok": False, "error": "Current password is incorrect."}), 400
-    conn = get_connection()
-    conn.execute("UPDATE users SET mfa_enabled = 0, mfa_secret = NULL WHERE id = ?", (user["id"],))
-    conn.commit()
-    conn.close()
-    return jsonify({"ok": True, "mfa_enabled": False})
+    return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
 
 
 @app.route("/api/profile/sessions/<int:session_id>", methods=["DELETE"])
@@ -562,9 +544,18 @@ def disable_mfa():
 def revoke_session(session_id):
     user = current_authenticated_user()
     conn = get_connection()
-    conn.execute("UPDATE active_sessions SET revoked = 1 WHERE id = ? AND user_id = ?", (session_id, user["id"]))
-    conn.commit()
-    conn.close()
+    try:
+        target = conn.execute(
+            "SELECT id, token_hash FROM active_sessions WHERE id = ? AND user_id = ?", (session_id, user["id"])
+        ).fetchone()
+        if target is None:
+            return jsonify({"ok": False, "error": "Session not found."}), 404
+        if target["token_hash"] == session_token_hash(user_session.get("session_token", "")):
+            return jsonify({"ok": False, "error": "You cannot revoke the session you are currently using. Sign out instead."}), 400
+        conn.execute("UPDATE active_sessions SET revoked = 1 WHERE id = ? AND user_id = ?", (session_id, user["id"]))
+        conn.commit()
+    finally:
+        conn.close()
     return jsonify({"ok": True})
 
 

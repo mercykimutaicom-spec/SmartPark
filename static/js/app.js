@@ -192,11 +192,6 @@
     });
     const data = await response.json();
     if (!data.ok) {
-      if (data.mfa_required) {
-        document.getElementById("mfa-login-field").hidden = false;
-        document.querySelector("#login-form input[name=mfa_code]").required = true;
-        document.querySelector("#login-form input[name=mfa_code]").focus();
-      }
       toast(data.error, "error");
       return;
     }
@@ -205,8 +200,6 @@
     document.getElementById("login-modal").hidden = true;
     document.getElementById("auth-btn").textContent = `Sign out (${currentUser.username})`;
     document.getElementById("profile-btn").hidden = false;
-    document.getElementById("mfa-login-field").hidden = true;
-    document.querySelector("#login-form input[name=mfa_code]").required = false;
     document.getElementById("login-close").hidden = false;
     toast("Signed in successfully.", "success");
   });
@@ -230,18 +223,38 @@
 
   async function loadProfile() {
     const response = await fetch("/api/profile");
+    if (response.status === 401) {
+      currentUser = null;
+      setDashboardAccess(false);
+      showLoginModal();
+      return;
+    }
     const data = await response.json();
     if (!data.user) return;
     document.getElementById("profile-username").value = data.user.username;
-    const enabled = data.user.mfa_enabled;
-    document.getElementById("mfa-status").textContent = enabled ? "Enabled" : "Not enabled";
-    document.getElementById("mfa-disable").hidden = !enabled;
-    document.getElementById("mfa-setup").hidden = enabled;
-    document.getElementById("profile-sessions").innerHTML = data.sessions.map((item) =>
-      `<div class="profile-session"><div><strong>${escapeHtml(item.user_agent || "Browser session")}</strong><span>${escapeHtml(item.last_seen)}${item.revoked ? " · revoked" : ""}</span></div><button class="page-btn" data-session-id="${item.id}" ${item.revoked ? "disabled" : ""}>Revoke</button></div>`
-    ).join("");
-    document.querySelectorAll("[data-session-id]").forEach((button) => button.addEventListener("click", async () => {
-      await fetch(`/api/profile/sessions/${button.dataset.sessionId}`, { method: "DELETE" });
+    document.getElementById("profile-sessions").innerHTML = data.sessions.map((item) => {
+      const revoked = item.revoked;
+      const current = item.current;
+      const label = current ? "This session" : (revoked ? "Revoked" : "Revoke");
+      return `<div class="profile-session"><div><strong>${escapeHtml(item.user_agent || "Browser session")}${current ? " · this browser" : ""}</strong><span>${escapeHtml(item.last_seen)}${revoked ? " · revoked" : ""}</span></div><button class="page-btn" data-session-id="${item.id}" ${revoked || current ? "disabled" : ""}>${label}</button></div>`;
+    }).join("");
+    document.querySelectorAll("#profile-sessions [data-session-id]").forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const revokeResponse = await fetch(`/api/profile/sessions/${button.dataset.sessionId}`, { method: "DELETE" });
+        const revokeData = await revokeResponse.json().catch(() => ({}));
+        if (!revokeResponse.ok || !revokeData.ok) {
+          toast(revokeData.error || "Could not revoke that session.", "error");
+          button.disabled = false;
+          return;
+        }
+        toast("Session revoked.", "success");
+      } catch (error) {
+        console.error("Revoke session failed", error);
+        toast("Could not revoke that session.", "error");
+        button.disabled = false;
+        return;
+      }
       loadProfile();
     }));
   }
@@ -257,34 +270,6 @@
     toast("Account details updated.", "success");
     form.reset();
     document.getElementById("profile-username").value = data.username;
-  });
-
-  document.getElementById("mfa-setup").addEventListener("click", async () => {
-    const response = await fetch("/api/profile/mfa/setup", { method: "POST" });
-    const data = await response.json();
-    if (!data.ok) { toast(data.error, "error"); return; }
-    document.getElementById("mfa-secret").textContent = `Secret: ${data.secret}`;
-    document.getElementById("mfa-setup-area").hidden = false;
-    document.getElementById("mfa-help").textContent = "Add this secret to your authenticator app, then enter the six-digit code.";
-  });
-
-  document.getElementById("mfa-enable").addEventListener("click", async () => {
-    const response = await fetch("/api/profile/mfa/enable", { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ code: document.getElementById("mfa-code").value }) });
-    const data = await response.json();
-    if (!data.ok) { toast(data.error, "error"); return; }
-    toast("MFA enabled. It will be required at the next login.", "success");
-    document.getElementById("mfa-setup-area").hidden = true;
-    loadProfile();
-  });
-
-  document.getElementById("mfa-disable").addEventListener("click", async () => {
-    const password = window.prompt("Enter your current password to disable MFA:");
-    if (!password) return;
-    const response = await fetch("/api/profile/mfa/disable", { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ current_password: password }) });
-    const data = await response.json();
-    if (!data.ok) { toast(data.error, "error"); return; }
-    toast("MFA disabled.", "success");
-    loadProfile();
   });
 
   function renderRates(rates, vatRate) {

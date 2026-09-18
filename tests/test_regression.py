@@ -1,7 +1,6 @@
 import sqlite3
 import tempfile
 import unittest
-import pyotp
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -75,18 +74,41 @@ class SmartParkRegressionTests(unittest.TestCase):
         self.assertEqual(profile.status_code, 200)
         self.assertTrue(profile.json["sessions"])
 
-    def test_mfa_setup_and_enable(self):
+    def test_revoke_other_session_and_relogin(self):
+        # Login creates session 1.
+        client = self.app.test_client()
+        login = client.post("/api/auth/login", json={"username": "manager", "password": "manager123"})
+        self.assertEqual(login.status_code, 200)
+        profile = client.get("/api/profile")
+        sessions = profile.json["sessions"]
+        self.assertTrue(sessions)
+        # Exactly one session should be flagged as current, and it must not
+        # be revocable.
+        current = [s for s in sessions if s.get("current")]
+        self.assertEqual(len(current), 1)
+        deny = client.delete(f"/api/profile/sessions/{current[0]['id']}")
+        self.assertEqual(deny.status_code, 400)
+        self.assertFalse(deny.json["ok"])
+        # A second login creates a revocable session; revoking it works.
+        other = self.app.test_client()
+        self.assertEqual(other.post("/api/auth/login", json={"username": "manager", "password": "manager123"}).status_code, 200)
+        other_profile = other.get("/api/profile")
+        other_current = [s for s in other_profile.json["sessions"] if s.get("current")]
+        self.assertEqual(len(other_current), 1)
+        ok = client.delete(f"/api/profile/sessions/{other_current[0]['id']}")
+        self.assertEqual(ok.status_code, 200)
+        self.assertTrue(ok.json["ok"])
+        # The revoked session can no longer authenticate.
+        self.assertEqual(other.get("/api/profile").status_code, 401)
+
+    def test_mfa_endpoints_removed(self):
+        # MFA was removed: endpoints must answer 410 Gone, and login must not
+        # require an authenticator code even for previously enrolled accounts.
         client = self.app.test_client()
         self.assertEqual(client.post("/api/auth/login", json={"username": "manager", "password": "manager123"}).status_code, 200)
-        setup = client.post("/api/profile/mfa/setup")
-        self.assertEqual(setup.status_code, 200)
-        code = pyotp.TOTP(setup.json["secret"]).now()
-        enabled = client.post("/api/profile/mfa/enable", json={"code": code})
-        self.assertEqual(enabled.status_code, 200)
-        client.post("/api/auth/logout")
-        requires_mfa = client.post("/api/auth/login", json={"username": "manager", "password": "manager123"})
-        self.assertEqual(requires_mfa.status_code, 401)
-        self.assertTrue(requires_mfa.json["mfa_required"])
+        for path in ("/api/profile/mfa/setup", "/api/profile/mfa/enable", "/api/profile/mfa/disable"):
+            response = client.post(path, json={})
+            self.assertEqual(response.status_code, 410)
 
 
 if __name__ == "__main__":

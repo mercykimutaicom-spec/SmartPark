@@ -62,7 +62,6 @@
     <p>Sign in to manage rates and export audit reports.<br><strong>Default password: manager123</strong></p>
     <label class="field"><span>Username</span><input name="username" required autocomplete="username"></label>
     <label class="field"><span>Password</span><input type="password" name="password" required autocomplete="current-password"></label>
-    <label class="field" id="mfa-login-field" hidden><span>Authenticator code</span><input name="mfa_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}"></label>
     <button type="submit" class="btn btn--primary">Sign in</button>
     <button type="button" class="page-btn" id="login-close">Cancel</button>
   </form>
@@ -79,18 +78,8 @@
       <button class="btn btn--primary" type="submit">Save account changes</button>
     </form>
     <section class="profile-section">
-      <div class="profile-section__title"><h3>Two-factor authentication</h3><span id="mfa-status">Not enabled</span></div>
-      <p id="mfa-help">Use an authenticator app to protect this account.</p>
-      <button class="btn btn--primary" type="button" id="mfa-setup">Set up authenticator</button>
-      <div id="mfa-setup-area" hidden>
-        <code id="mfa-secret"></code>
-        <label class="field"><span>Verification code</span><input id="mfa-code" inputmode="numeric" pattern="[0-9]{6}"></label>
-        <button class="btn btn--success" type="button" id="mfa-enable">Enable MFA</button>
-      </div>
-      <button class="page-btn" type="button" id="mfa-disable" hidden>Disable MFA</button>
-    </section>
-    <section class="profile-section">
       <div class="profile-section__title"><h3>Active sessions</h3><span>12-hour expiry</span></div>
+      <p class="profile-section__hint">Revoke any other browser session. Your current session stays active until you sign out.</p>
       <div id="profile-sessions" class="profile-sessions"></div>
     </section>
   </section>
