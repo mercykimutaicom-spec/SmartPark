@@ -88,6 +88,6 @@ databases:
   - name: smartpark-db
     databaseName: smartpark
     user: smartpark
-    # Free Postgres expires after 30 days on Render. For a continuously
-    # running lot, switch this to `basic_256mb` (paid, persistent).
-    plan: free
+    # Paid + persistent: free Postgres expires after 30 days and would take
+    # the live lot down. basic_256mb is the cheapest continuous option.
+    plan: basic_256mb
