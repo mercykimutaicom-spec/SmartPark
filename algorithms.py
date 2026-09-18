@@ -42,10 +42,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from db import DATABASE_URL, get_connection
 
-# In-memory min-heap of available slots, keyed by vehicle_type.
-# Entries are (walking_distance_from_entrance, slot_number) tuples, so the
-# heap always pops the NEAREST free bay first (tie-break: lowest number).
-# e.g. {"car": [(2, 1), (3, 9)], "motorcycle": [...], "van": [...]}
+# In-memory min-heap of free slots per vehicle_type, keyed
+# (walking_distance_from_entrance, slot_number): pops the NEAREST bay first.
 _free_slot_heaps = {}
 
 # In-memory plate trie for prefix search (attendant lookup).
@@ -63,14 +61,9 @@ def _parse(ts):
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
 
 
-# ---------------------------------------------------------------------------
 # MODULE 6b: FIFO Barrier Queue
-# ---------------------------------------------------------------------------
-# The design doc promises that simultaneous barrier requests are serialized
-# first-come-first-served instead of racing. This is the real implementation:
-# every open request is enqueued and a single dedicated worker drains the
-# queue strictly in order, so two simultaneous exits (or an entry + exit) can
-# never interleave barrier pulses.
+# Every open request is enqueued; one worker drains the queue in strict submit
+# order, so simultaneous entry/exit requests can never interleave pulses.
 class BarrierQueue:
     """Single-lane FIFO queue serving barrier open-requests in submit order."""
 
@@ -123,9 +116,7 @@ class BarrierQueue:
 barrier_queue = BarrierQueue()
 
 
-# ---------------------------------------------------------------------------
 # MODULE 7b: Plate Prefix Search (trie)
-# ---------------------------------------------------------------------------
 class PlateTrie:
     """Trie over plate strings for O(prefix) autocomplete lookups."""
 
@@ -150,13 +141,9 @@ class PlateTrie:
         return matches[:limit]
 
 
-# ---------------------------------------------------------------------------
-# Lot geometry: slot_number -> grid position -> walking distance
-# ---------------------------------------------------------------------------
-# The 40-bay lot is laid out as an 8-column grid (car bays rows 0-2, motorcycle
-# and van bays rows 3-4). The driver entrance is the top-left corner (0, 0).
-# Distances below are computed with Dijkstra over the grid (uniform edge cost,
-# so it degenerates to BFS but demonstrates the priority-queue machinery).
+# Lot geometry: slot_number -> grid position -> walking distance from the entrance.
+# 40 bays on an 8-column grid (car rows 0-2, motorcycle/van rows 3-4); the driver
+# entrance is (0, 0). Distances come from Dijkstra on the grid (uniform edge cost).
 GRID_COLS = 8
 GRID_ROWS = 5
 ENTRANCE = (0, 0)

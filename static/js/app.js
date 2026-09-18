@@ -1,12 +1,4 @@
-/*
- * app.js — SmartPark KE frontend logic
- * Talks to the Flask REST API (app.py):
- *   GET  /api/slots     -> live slot list + per-type stats
- *   GET  /api/activity   -> recent session feed
- *   POST /api/entry      -> check a vehicle in
- *   POST /api/exit        -> compute fee / free exit
- *   POST /api/pay          -> settle a pending fee
- */
+/* app.js — SmartPark KE frontend for the Flask REST API (app.py). */
 (function () {
   "use strict";
 
@@ -22,7 +14,7 @@
   let paypalPending = null;
   let currentUser = null;
 
-  // ---- Clock ---------------------------------------------------------------
+  // Clock
   function tickClock() {
     document.getElementById("clock").textContent =
       new Date().toLocaleTimeString("en-KE", {
@@ -52,7 +44,7 @@
     navigationSections.forEach((section) => navigationObserver.observe(section));
   }
 
-  // ---- Toasts ----------------------------------------------------------------
+  // Toasts
   function toast(message, type = "success") {
     const stack = document.getElementById("toast-stack");
     const el = document.createElement("div");
@@ -68,7 +60,7 @@
     }, 4200);
   }
 
-  // ---- Barrier scene: arm lift + car drive-through, one orchestrated moment --
+  // Barrier scene: arm lift + car drive-through (one orchestrated moment)
   function playBarrierSequence(caption) {
     const scene = document.getElementById("barrier");
     const arm = document.getElementById("armGroup");
@@ -95,7 +87,7 @@
     }, 3400);
   }
 
-  // ---- Count-up number animation for the hero stat --------------------------
+  // Count-up animation for the hero stat
   function animateCount(el, from, to, duration = 500) {
     if (from === to) { el.textContent = to; return; }
     const start = performance.now();
@@ -108,7 +100,7 @@
     requestAnimationFrame(step);
   }
 
-  // ---- Slot map + hero stats --------------------------------------------------
+  // Slot map + hero stats
   async function refreshSlots() {
     try {
       const res = await fetch("/api/slots");
@@ -363,7 +355,7 @@
     refreshSlots();
   });
 
-  // ---- Activity feed -----------------------------------------------------------
+  // Activity feed
   function parseActivityDate(value) {
     if (!value) return null;
     // Session records created before timezone support are naive UTC strings.
@@ -480,7 +472,7 @@
     renderActivity();
   });
 
-  // ---- Attendant tools: trie plate search -------------------------------------
+  // Attendant tools: trie plate search
   document.getElementById("plate-search").addEventListener("click", async () => {
     const prefix = document.getElementById("plate-prefix").value.trim();
     const box = document.getElementById("plate-results");
@@ -502,7 +494,7 @@
     }
   });
 
-  // ---- Attendant tools: maintenance + barrier override ------------------------
+  // Attendant tools: maintenance + barrier override
   async function postOverride(url, payload, successMessage) {
     try {
       const res = await fetch(url, { method: "POST", headers: jsonHeaders(), body: JSON.stringify(payload) });
@@ -540,7 +532,7 @@
     postOverride("/api/barrier/override", { session_id: sessionId, reason }, "Barrier open signal sent (audited).");
   });
 
-  // ---- Analytics (manager) ------------------------------------------------------
+  // Analytics (manager)
   async function loadAnalytics() {
     try {
       const res = await fetch("/api/analytics");
@@ -577,7 +569,7 @@
   }
   loadAnalytics();
 
-  // ---- Sound cues (WebAudio — no assets needed) -------------------------------
+  // Sound cues (WebAudio — no assets needed)
   let audioCtx = null;
   function playChime(kind = "success") {
     try {
@@ -601,7 +593,7 @@
     } catch (err) { /* audio is best-effort; never block the flow */ }
   }
 
-  // ---- Entry ticket modal (quick win #1) --------------------------------------
+  // Entry ticket modal
   let lastTicketCode = "";
   function showEntryTicket(data) {
     lastTicketCode = data.ticket_code || "";
@@ -625,7 +617,7 @@
     }
   });
 
-  // ---- Exit: ticket code -> plate ---------------------------------------------
+  // Exit: ticket code -> plate
   document.getElementById("use-ticket").addEventListener("click", async () => {
     const input = document.getElementById("ticket-code");
     const code = input.value.trim();
@@ -644,7 +636,7 @@
     }
   });
 
-  // ---- Entry form ------------------------------------------------------------
+  // Entry form
   const entryForm = document.getElementById("entry-form");
   entryForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -678,7 +670,7 @@
     }
   });
 
-  // ---- Exit form -------------------------------------------------------------
+  // Exit form
   const exitForm = document.getElementById("exit-form");
   exitForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -919,11 +911,11 @@
   });
   document.getElementById("receipt-print").addEventListener("click", () => window.print());
 
-  // ---- Helpers -----------------------------------------------------------------
+  // Helpers
   function jsonHeaders() { return { "Content-Type": "application/json" }; }
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-  // ---- Boot ------------------------------------------------------------------
+  // Boot
   refreshSlots();
   refreshAuth();
   refreshRates();

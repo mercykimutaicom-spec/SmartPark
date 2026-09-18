@@ -132,14 +132,12 @@ def payhero_headers():
     }
 
 
-# ---------------------------------------------------------------------------
-# Entry ticket helpers: HMAC-signed QR ticket (quick win #1)
-# ---------------------------------------------------------------------------
+# Entry ticket: HMAC-signed code + QR that opens the vehicle-details page.
 TICKET_PREFIX = "SP-TK"
 
 
 def _ticket_secret():
-    # Stable per deployment; FLASK_SECRET_KEY is mandatory in production.
+    # Signing key: stable per deployment (FLASK_SECRET_KEY in production).
     return (os.environ.get("FLASK_SECRET_KEY") or "smartpark-local-fallback-key").encode()
 
 
@@ -416,9 +414,8 @@ def get_receipt(session_id):
         conn.close()
     if row is None:
         return None
-    # The receipt is verified from server-side state (completed session with a
-    # successful payment). No hash/signature value is ever returned or printed:
-    # the QR carries an HMAC-signed link instead, so receipt ids stay unguessable.
+    # No hash or signature is printed: verification is server-side state, and
+    # the QR carries a signed link so receipt ids cannot be enumerated.
     verification_url = f"{public_base_url()}/receipt/{row['id']}?t={receipt_link_token(row['id'])}"
     qr_image = qrcode.make(verification_url)
     qr_output = BytesIO()
@@ -488,15 +485,11 @@ def report_rows():
         })
     return report
 
-# Create tables + seed the lot layout on first run, then warm the
-# in-memory slot-allocation heap from the database (see algorithms.py).
+# Create/seed the schema on first run, then warm the slot heap from the DB.
 init_db()
 algorithms.load_heaps_from_db()
 
 
-# ---------------------------------------------------------------------------
-# Page
-# ---------------------------------------------------------------------------
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -537,9 +530,7 @@ def auth_login():
     conn.close()
     if user is None or not check_password_hash(user["password_hash"], password):
         return jsonify({"ok": False, "error": "Invalid sign-in details."}), 401
-    # MFA gate removed: accounts sign in with username + password only.
-    # Existing mfa_secret/mfa_enabled columns are ignored (kept for schema
-    # compatibility, never enforced).
+    # No MFA: username + password only (legacy mfa_* columns are never read).
     create_authenticated_session(user, request)
     return jsonify({"ok": True, "user": {"username": user["username"], "role": user["role"], "mfa_enabled": False}})
 
@@ -616,7 +607,7 @@ def update_profile():
 @app.route("/api/profile/mfa/setup", methods=["POST"])
 @require_role()
 def setup_mfa():
-    # MFA removed: kept as a no-op so old UI builds fail loudly, not silently.
+    # 410 Gone: removed feature, so old clients fail loudly instead of silently.
     return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
 
 
@@ -652,9 +643,7 @@ def revoke_session(session_id):
     return jsonify({"ok": True})
 
 
-# ---------------------------------------------------------------------------
-# Display Module — live slot availability (polled by the UI)
-# ---------------------------------------------------------------------------
+# Display module: live slot availability (polled by the UI).
 @app.route("/api/slots")
 def api_slots():
     return jsonify({
@@ -713,9 +702,7 @@ def api_update_rates():
     return jsonify({"ok": True, "rates": algorithms.get_parking_rates(), "vat_rate": vat_rate})
 
 
-# ---------------------------------------------------------------------------
-# Vehicle Entry Module
-# ---------------------------------------------------------------------------
+# Vehicle entry module.
 @app.route("/api/entry", methods=["POST"])
 def api_entry():
     data = request.get_json(force=True)
@@ -730,8 +717,7 @@ def api_entry():
         return jsonify({"ok": False, "error": error}), 400
 
     ticket_code = make_ticket_code(session)
-    # The QR encodes the public ticket page (not the bare code) so any phone
-    # camera opens the vehicle details directly.
+    # Encode the page url, not the bare code, so a phone camera opens details.
     ticket_url = f"{public_base_url()}{url_for('ticket_page', code=ticket_code)}"
     barrier = algorithms.barrier_queue.request(
         {"id": session["id"], "status": "completed", "slot_number": session["slot_number"]}
@@ -762,11 +748,8 @@ def api_ticket_resolve(code):
     })
 
 
-# ---------------------------------------------------------------------------
-# Public scan pages: the QR on an entry ticket / receipt opens these.
-# No login required — the entry ticket is HMAC-signed and the receipt link
-# carries its own HMAC token, so neither url can be guessed or enumerated.
-# ---------------------------------------------------------------------------
+# Public scan pages opened by the QR codes. No login: the ticket is HMAC-signed
+# and the receipt link carries its own token, so neither url can be guessed.
 def public_page_context(mode, session=None, receipt=None, error=None):
     business_name = (receipt or {}).get("business_name") or os.environ.get("BUSINESS_NAME", "SmartPark KE")
     return {
@@ -820,9 +803,7 @@ def receipt_page(session_id):
     return render_template("ticket.html", **public_page_context("receipt", receipt=receipt))
 
 
-# ---------------------------------------------------------------------------
-# Vehicle Exit + Billing Module
-# ---------------------------------------------------------------------------
+# Vehicle exit + billing module.
 @app.route("/api/exit", methods=["POST"])
 def api_exit():
     data = request.get_json(force=True)
@@ -833,8 +814,7 @@ def api_exit():
         return jsonify({"ok": False, "error": error}), 400
 
     if session["status"] == "completed":
-        # Free tier (<=30 min) — no payment required, barrier opens right away
-        # through the FIFO barrier queue (serialized with all other lanes).
+        # Free tier (<=30 min): open the barrier now, through the FIFO queue.
         barrier = algorithms.barrier_queue.request(session)
         return jsonify({
             "ok": True, "payment_required": False,
@@ -847,9 +827,7 @@ def api_exit():
     })
 
 
-# ---------------------------------------------------------------------------
-# Payment Module
-# ---------------------------------------------------------------------------
+# Payment module.
 @app.route("/api/pay", methods=["POST"])
 def api_pay():
     data = request.get_json(force=True)
@@ -1093,18 +1071,14 @@ def export_report():
     return jsonify({"ok": False, "error": "Unsupported report format."}), 400
 
 
-# ---------------------------------------------------------------------------
-# Recent activity feed (attendant view)
-# ---------------------------------------------------------------------------
+# Recent activity feed (attendant view).
 @app.route("/api/activity")
 def api_activity():
     sessions = algorithms.list_recent_activity(limit=1000)
     return jsonify({"sessions": sessions, "overstays": sum(1 for s in sessions if s.get("overstay"))})
 
 
-# ---------------------------------------------------------------------------
-# Attendant tools: plate prefix search (trie), overrides, analytics
-# ---------------------------------------------------------------------------
+# Attendant tools: trie plate search, overrides, analytics.
 @app.route("/api/plates")
 @require_role()
 def api_plate_search():

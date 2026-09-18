@@ -78,21 +78,19 @@ class SmartParkRegressionTests(unittest.TestCase):
         self.assertTrue(profile.json["sessions"])
 
     def test_revoke_other_session_and_relogin(self):
-        # Login creates session 1.
         client = self.app.test_client()
         login = client.post("/api/auth/login", json={"username": "manager", "password": "manager123"})
         self.assertEqual(login.status_code, 200)
         profile = client.get("/api/profile")
         sessions = profile.json["sessions"]
         self.assertTrue(sessions)
-        # Exactly one session should be flagged as current, and it must not
-        # be revocable.
+        # Only one session is current, and it cannot be revoked.
         current = [s for s in sessions if s.get("current")]
         self.assertEqual(len(current), 1)
         deny = client.delete(f"/api/profile/sessions/{current[0]['id']}")
         self.assertEqual(deny.status_code, 400)
         self.assertFalse(deny.json["ok"])
-        # A second login creates a revocable session; revoking it works.
+        # A second login is revocable.
         other = self.app.test_client()
         self.assertEqual(other.post("/api/auth/login", json={"username": "manager", "password": "manager123"}).status_code, 200)
         other_profile = other.get("/api/profile")
@@ -105,8 +103,7 @@ class SmartParkRegressionTests(unittest.TestCase):
         self.assertEqual(other.get("/api/profile").status_code, 401)
 
     def test_mfa_endpoints_removed(self):
-        # MFA was removed: endpoints must answer 410 Gone, and login must not
-        # require an authenticator code even for previously enrolled accounts.
+        # MFA is gone: endpoints answer 410 and login never asks for a code.
         client = self.app.test_client()
         self.assertEqual(client.post("/api/auth/login", json={"username": "manager", "password": "manager123"}).status_code, 200)
         for path in ("/api/profile/mfa/setup", "/api/profile/mfa/enable", "/api/profile/mfa/disable"):

@@ -1,35 +1,15 @@
-# ---- SmartPark KE — Render Blueprint: web + Postgres + disk ----
-# What this gives you: a continuously-running gunicorn service that
-# Render keeps alive, restarts on crash, and redeploys ONLY when the
-# GitHub Action `Render Deploy` fires the Deploy Hook (gated on CI green).
-#
-# Setup (once):
-#   1. Push this file to GitHub (main branch).
-#   2. Render Dashboard > New > Blueprint > select your repo.
-#      Render creates: smartpark-web (Docker) + smartpark-db (Postgres).
-#   3. In Render > smartpark-web > Settings, copy the Deploy Hook URL.
-#   4. In GitHub repo > Settings > Secrets and variables > Actions, add:
-#        RENDER_DEPLOY_HOOK_URL = <hook URL from step 3>
-#        RENDER_APP_URL         = https://<your-service>.onrender.com (no trailing slash)
-#   5. In Render > smartpark-web > Environment, fill the sync:false vars
-#      below (admin password, PayHero/PayPal, KRA details). Never commit them.
-#
-# Notes:
-#   - autoDeploy:false is INTENTIONAL: pushes do NOT go live until tests +
-#     GHCR smoke-test pass and the Action fires the hook. This is the gate
-#     that keeps broken code off your live lot.
-#   - The disk persists /app/data (SQLite fallback + backup staging) across
-#     restarts/redeploys. Postgres remains the source of truth when
-#     DATABASE_URL is set (it is, via fromDatabase below).
-#   - Disks require a paid instance type (starter or higher). If you stay on
-#     free, delete the `disk:` block before applying the Blueprint.
+# SmartPark KE — Render Blueprint: always-on web service + Postgres + disk.
+# autoDeploy:false is INTENTIONAL: pushes only reach Render after CI and the
+# GHCR smoke test pass and the Deploy Hook is fired, keeping broken code offline.
+# The disk keeps /app/data (SQLite fallback + backups); Postgres is the source of
+# truth via DATABASE_URL. Disks need a paid instance type (starter or higher).
+# Full setup steps: DEPLOYMENT.md -> "Render: run by itself".
 services:
   - type: web
     name: smartpark-web
     runtime: docker
     dockerfilePath: ./Dockerfile
-    # Render injects PORT automatically; our Dockerfile CMD binds
-    # gunicorn to $PORT, and app.py falls back to 5000 locally.
+    # Render injects PORT; the Dockerfile binds gunicorn to it (5000 locally).
     autoDeploy: false
     plan: starter
     healthCheckPath: /health/live
@@ -90,6 +70,5 @@ databases:
   - name: smartpark-db
     databaseName: smartpark
     user: smartpark
-    # Paid + persistent: free Postgres expires after 30 days and would take
-    # the live lot down. basic_256mb is the cheapest continuous option.
+    # Paid + persistent: the free Postgres tier expires after 30 days.
     plan: basic_256mb

@@ -279,8 +279,7 @@ def init_db():
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0")
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-        # Race-safe reference seed: concurrent gunicorn workers booting at
-        # once must not hit UNIQUE violations (same fix as the SQLite path).
+        # Race-safe seed: concurrent gunicorn workers must not hit UNIQUE violations.
         for max_minutes, fee_amount in [(30, 0), (120, 50), (240, 100), (360, 300), (2147483647, 500)]:
             conn.execute(
                 "INSERT INTO parking_rates (max_minutes, fee_amount, updated_at) "
@@ -318,8 +317,7 @@ def init_db():
         conn.close()
         return
     conn.executescript(SCHEMA_SQL)
-    # Idempotent reference seed: safe when 2+ gunicorn workers boot at once
-    # (check-then-insert races previously caused UNIQUE failures on restart).
+    # Idempotent seed: check-then-insert used to hit UNIQUE on concurrent boot.
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     for max_minutes, fee_amount in [(30, 0), (120, 50), (240, 100), (360, 300), (2147483647, 500)]:
         conn.execute(
@@ -333,8 +331,7 @@ def init_db():
         (now,),
     )
     conn.commit()
-    # Admin bootstrap: also race-safe (UNIQUE username guard via pre-check
-    # inside the same transaction + UNIQUE constraint as backstop).
+    # Race-safe admin bootstrap: pre-check plus the UNIQUE constraint.
     admin_username = os.environ.get("ADMIN_USERNAME")
     admin_password = os.environ.get("ADMIN_PASSWORD")
     if admin_username and admin_password and not conn.execute(

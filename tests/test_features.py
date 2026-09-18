@@ -33,7 +33,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return client
 
-    # ---- Billing boundaries -------------------------------------------------
+    # Billing boundaries
     def test_calculate_fee_tier_boundaries(self):
         entry = datetime.now(timezone.utc).replace(microsecond=0)
         cases = [
@@ -51,7 +51,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         subtotal, vat_rate, vat_amount, total = self.algorithms.calculate_totals(50)
         self.assertEqual((subtotal, vat_rate, vat_amount, total), (50, 16.0, 8, 58))
 
-    # ---- Nearest-slot allocation (Dijkstra-ordered heap) ---------------------
+    # Nearest-slot allocation (Dijkstra-ordered heap)
     def test_slot_distance_grid(self):
         self.assertEqual(self.algorithms.slot_distance(1), 0)     # entrance bay
         self.assertEqual(self.algorithms.slot_distance(2), 1)     # adjacent
@@ -67,7 +67,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertIn(session2["slot_number"], (2, 9))  # distance-1 bays
         self._cleanup_plates("NEAREST1", "NEAREST2")
 
-    # ---- FIFO barrier queue ---------------------------------------------------
+    # FIFO barrier queue
     def test_barrier_queue_serves_fifo(self):
         queue = self.algorithms.BarrierQueue()
         sessions = [{"id": i, "status": "completed", "slot_number": i} for i in range(1, 6)]
@@ -82,7 +82,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertFalse(result["opened"])
         self.assertIn("Payment", result["reason"])
 
-    # ---- Trie plate prefix search ---------------------------------------------
+    # Trie plate prefix search
     def test_plate_trie_prefix_search(self):
         trie = self.algorithms.PlateTrie()
         for plate in ("KDA123B", "KDB456C", "KDA999Z", "XYZ1"):
@@ -96,7 +96,7 @@ class SmartParkFeatureTests(unittest.TestCase):
     def test_plate_search_endpoint_requires_manager(self):
         client = self.app.test_client()
         self.assertEqual(client.get("/api/plates?prefix=K").status_code, 401)
-        # Create our own vehicle so this test never depends on another module.
+        # Own vehicle: never depend on another test's leftover data.
         session, error = self.algorithms.register_entry("PLTSEARCH1", "car", "0700000061")
         self.assertIsNone(error)
         manager = self.login_manager()
@@ -142,7 +142,7 @@ class SmartParkFeatureTests(unittest.TestCase):
             conn.close()
         self.algorithms.load_heaps_from_db()
 
-    # ---- Entry ticket QR -------------------------------------------------------
+    # Entry ticket QR
     def test_entry_ticket_roundtrip(self):
         client = self.app.test_client()
         entry = client.post("/api/entry", json={
@@ -159,7 +159,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertEqual(tampered.status_code, 400)
         self._cleanup_plates("TICKETQR1")
 
-    # ---- Receipt / ticket scan pages -------------------------------------------
+    # Receipt / ticket scan pages
     def _park_and_pay(self, plate, phone):
         session, error = self.algorithms.register_entry(plate, "car", phone)
         self.assertIsNone(error)
@@ -182,16 +182,16 @@ class SmartParkFeatureTests(unittest.TestCase):
         response = client.get(f"/api/receipt/{settled['id']}")
         self.assertEqual(response.status_code, 200)
         receipt = response.json["receipt"]
-        # No signature/hash is ever returned...
+        # No signature or hash is ever returned.
         self.assertNotIn("electronic_signature", receipt)
         self.assertIs(receipt["verified"], True)
         digest = re.compile(r"\b[0-9a-fA-F]{64}\b")
         for key, value in receipt.items():
             if isinstance(value, str) and key != "qr_code":
                 self.assertIsNone(digest.search(value), f"{key} leaked a hash value")
-        # ...the printed phone number is minimised...
+        # The printed phone number is masked.
         self.assertTrue(receipt["phone_number"].startswith("***"))
-        # ...and the QR points at the public receipt page with a signed token.
+        # The QR points at the receipt page with a signed token.
         link = urlsplit(receipt["verification_url"])
         self.assertEqual(link.path, f"/receipt/{settled['id']}")
         self.assertTrue(link.query.startswith("t="))
@@ -222,7 +222,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertIn("Vehicle pass", body)                                # vehicle details page
         self.assertIn(str(entry.json["session"]["slot_number"]), body)     # allocated slot
         self.assertIn("Check-in", body)                                    # entry time
-        # A tampered ticket shows the "not available" page, never vehicle details.
+        # A tampered ticket never shows vehicle details.
         tampered = client.get("/ticket/" + entry.json["ticket_code"][:-2] + "zz")
         self.assertEqual(tampered.status_code, 404)
         self.assertNotIn("TICKETPG1", tampered.data.decode("utf-8"))
@@ -231,7 +231,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertIn("/static/img/favicon.svg", body)
         self._cleanup_plates("TICKETPG1")
 
-    # ---- Brand assets (SVG) ------------------------------------------------------
+    # Brand assets (SVG)
     def test_brand_svg_assets_are_served_and_well_formed(self):
         client = self.app.test_client()
         for name in ("mark.svg", "favicon.svg"):
@@ -246,7 +246,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertIn("/static/img/favicon.svg", html)
         self.assertIn("/static/img/mark.svg", html)
 
-    # ---- Attendant overrides ----------------------------------------------------
+    # Attendant overrides
     def test_slot_maintenance_toggle_and_allocation_exclusion(self):
         client = self.login_manager()
         # Pick a bay that is genuinely free right now (other tests park cars).
@@ -296,7 +296,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         conn.close()
         self.assertEqual(events, 1)
 
-    # ---- Overstay alerts ---------------------------------------------------------
+    # Overstay alerts
     def test_overstay_flag_and_count(self):
         session, _ = self.algorithms.register_entry("OVERSTAY1", "car", "0700000041")
         conn = db.get_connection()
@@ -312,7 +312,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertGreaterEqual(self.algorithms.count_overstays(), 1)
         self._cleanup_plates("OVERSTAY1")
 
-    # ---- Analytics ----------------------------------------------------------------
+    # Analytics
     def test_analytics_summary_shape_and_revenue(self):
         session, _ = self.algorithms.register_entry("ANALYTIC1", "car", "0700000051")
         conn = db.get_connection()

@@ -1,11 +1,6 @@
-/* =========================================================================
-   SmartPark KE — Design tokens
-   The panel material (translucent, blurred glass with a hairline edge
-   highlight) is drawn from the acrylic screen on a real payment kiosk —
-   not decoration for its own sake. Colour stays functional throughout:
-   amber is the barrier/accent colour, teal-green and coral are used
-   ONLY to mean free/occupied, everywhere they appear.
-   ========================================================================= */
+/* SmartPark KE — design tokens.
+   Glass panels echo the acrylic screen on a real kiosk. Amber = barrier/accent;
+   teal-green and coral mean free/occupied ONLY. */
 :root{
   --ink:          #0B0F16;
   --panel:        rgba(255,255,255,0.045);
@@ -47,9 +42,7 @@ body{
 
 h1,h2,h3{ font-family: var(--font-display); margin: 0; }
 
-/* ---------------------------------------------------------------------- */
-/* Ambient background — two slow-drifting glows, fixed behind everything */
-/* ---------------------------------------------------------------------- */
+/* Ambient background: two slow-drifting glows, fixed behind everything */
 .bg-scene{ position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .bg-glow{
   position: absolute; width: 60vw; height: 60vw; border-radius: 50%;
@@ -64,9 +57,7 @@ h1,h2,h3{ font-family: var(--font-display); margin: 0; }
   100% { transform: translate(-3vw,-2vw) scale(0.98); }
 }
 
-/* ---------------------------------------------------------------------- */
-/* Glass panel — shared material for cards, hero blocks                   */
-/* ---------------------------------------------------------------------- */
+/* Glass panel: shared material for cards and hero blocks */
 .panel{
   position: relative;
   background: var(--panel);
@@ -77,9 +68,7 @@ h1,h2,h3{ font-family: var(--font-display); margin: 0; }
   box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 20px 40px -24px rgba(0,0,0,0.6);
 }
 
-/* ---------------------------------------------------------------------- */
-/* Topbar                                                                  */
-/* ---------------------------------------------------------------------- */
+/* Topbar */
 .topbar{
   position: sticky; top:0; z-index: 20;
   background: rgba(11,15,22,0.72);
@@ -136,15 +125,11 @@ h1,h2,h3{ font-family: var(--font-display); margin: 0; }
 .topbar__auth{ border:1px solid var(--edge); border-radius:var(--radius-s); padding:6px 10px; background:var(--panel); color:var(--text-dim); font:inherit; font-size:0.76rem; cursor:pointer; }
 .topbar__auth:hover{ border-color:var(--amber); color:var(--text); }
 
-/* ---------------------------------------------------------------------- */
-/* Shell / layout                                                         */
-/* ---------------------------------------------------------------------- */
+/* Shell / layout */
 .shell{ position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; display:flex; flex-direction:column; gap: 40px; }
 main section[id]{ scroll-margin-top:92px; }
 
-/* ---------------------------------------------------------------------- */
-/* Hero                                                                    */
-/* ---------------------------------------------------------------------- */
+/* Hero */
 .hero{ display:grid; grid-template-columns: 1.05fr 0.95fr; gap: 22px; align-items:stretch; }
 
 .hero__counts{ padding: 28px 30px; display:flex; flex-direction:column; justify-content:center; gap: 22px; }
@@ -185,9 +170,7 @@ main section[id]{ scroll-margin-top:92px; }
 }
 .barrier-caption.is-open{ color: var(--free); }
 
-/* ---------------------------------------------------------------------- */
-/* Entry / Exit cards                                                     */
-/* ---------------------------------------------------------------------- */
+/* Entry / Exit cards */
 .ops{ display:grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .rate-panel{ padding:22px 24px; }
 .rate-panel__head{ display:flex; align-items:center; justify-content:space-between; gap:16px; }
@@ -284,9 +267,7 @@ main section[id]{ scroll-margin-top:92px; }
 .chip:hover{ border-color: rgba(255,255,255,0.22); color: var(--text); }
 .chip.is-active{ background: var(--amber); color: var(--ink); border-color: var(--amber); font-weight:600; }
 
-/* ---------------------------------------------------------------------- */
-/* Slot map                                                                */
-/* ---------------------------------------------------------------------- */
+/* Slot map */
 .lot__head{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:14px; }
 .tabs{ display:flex; gap:6px; background: var(--panel); border: 1px solid var(--edge); border-radius: 999px; padding: 4px; }
 .tab{
@@ -320,9 +301,7 @@ main section[id]{ scroll-margin-top:92px; }
 }
 .slot--flash{ animation: cellFlash 0.9s var(--ease-out); }
 
-/* ---------------------------------------------------------------------- */
-/* Activity table                                                         */
-/* ---------------------------------------------------------------------- */
+/* Activity table */
 .activity{ display:flex; flex-direction:column; gap:14px; }
 .activity__head{ display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .activity__controls{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
@@ -377,9 +356,7 @@ main section[id]{ scroll-margin-top:92px; }
 .page-btn:hover:not(:disabled){ border-color:var(--amber); background:rgba(242,169,59,0.08); color:var(--text); }
 .page-btn:disabled{ cursor:not-allowed; opacity:0.4; }
 
-/* ---------------------------------------------------------------------- */
-/* Toasts                                                                  */
-/* ---------------------------------------------------------------------- */
+/* Toasts */
 .toast-stack{
   position: fixed; top: 78px; right: 18px; z-index: 100;
   display:flex; flex-direction:column; gap:10px; width: min(340px, calc(100vw - 36px));
@@ -478,14 +455,10 @@ main section[id]{ scroll-margin-top:92px; }
   .receipt-card__actions{ display:none; }
 }
 
-/* ---------------------------------------------------------------------- */
-/* Footer                                                                  */
-/* ---------------------------------------------------------------------- */
+/* Footer */
 .foot{ position: relative; z-index: 1; text-align:center; color: var(--text-faint); font-size:0.78rem; padding: 24px; }
 
-/* ---------------------------------------------------------------------- */
-/* Responsive                                                              */
-/* ---------------------------------------------------------------------- */
+/* Responsive */
 @media (max-width: 880px){
   .topbar__inner{ flex-wrap:wrap; gap:10px; }
   .topnav{ order:3; width:100%; margin:0; overflow-x:auto; justify-content:flex-start; padding-top:4px; }
@@ -511,16 +484,14 @@ main section[id]{ scroll-margin-top:92px; }
   .topbar__auth{ max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 }
 
-/* ---------------------------------------------------------------------- */
-/* Accessibility                                                           */
-/* ---------------------------------------------------------------------- */
+/* Accessibility */
 @media (prefers-reduced-motion: reduce){
   .bg-glow, .live-pill__dot, #armGroup, .barrier-scene.is-driving #carGroup,
   .btn, .fee-box, .toast, .slot{ animation: none !important; transition: none !important; }
 }
 :focus-visible{ outline: 2px solid var(--amber); outline-offset: 2px; }
 
-/* ---- Attendant tools / analytics / ticket (feature pack) ---- */
+/* Attendant tools / analytics / ticket */
 .tools{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; margin:26px 0; }
 .tools__divider{ border:0; border-top:1px solid var(--line,#2C3B4E); margin:16px 0; }
 .plate-results{ margin-top:12px; display:grid; gap:8px; }

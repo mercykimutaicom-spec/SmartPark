@@ -1,4 +1,4 @@
-# ---- SmartPark KE production image ----
+# SmartPark KE production image
 FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,8 +17,8 @@ COPY templates/ ./templates/
 COPY static/ ./static/
 COPY scripts/ ./scripts/
 
-# SQLite fallback path (ephemeral unless a volume is mounted).
-# Production Postgres is selected automatically via DATABASE_URL.
+# SQLite fallback (ephemeral unless a volume is mounted); Postgres is picked
+# automatically when DATABASE_URL is set.
 VOLUME ["/app/data"]
 ENV SQLITE_DB_PATH=/app/data/smartpark.db
 

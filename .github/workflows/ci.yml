@@ -1,7 +1,4 @@
-# ---- SmartPark KE: CI (tests + security gate) ----
-# Runs on every push and pull request. No deployment here: this only
-# proves the code installs, compiles, passes tests, and has no known
-# dependency vulnerabilities or committed secrets.
+# SmartPark KE: CI (tests + secret scan) on every push/PR. No deployment.
 name: CI
 
 on:
@@ -55,9 +52,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Audit dependencies for known CVEs
-        # Does not touch production. Shows advisories without failing on
-        # unrelated noise; upgrade to `--require-hashes` / fail-on-high when
-        # the release process needs a hard gate.
+        # Advisory only (never fails the build); production is untouched.
         run: pip-audit --desc on || echo "::warning::pip-audit reported advisories (non-blocking)"
 
   secret-scan:
