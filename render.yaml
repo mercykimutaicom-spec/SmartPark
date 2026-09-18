@@ -1,0 +1,93 @@
+# ---- SmartPark KE — Render Blueprint: web + Postgres + disk ----
+# What this gives you: a continuously-running gunicorn service that
+# Render keeps alive, restarts on crash, and redeploys ONLY when the
+# GitHub Action `Render Deploy` fires the Deploy Hook (gated on CI green).
+#
+# Setup (once):
+#   1. Push this file to GitHub (main branch).
+#   2. Render Dashboard > New > Blueprint > select your repo.
+#      Render creates: smartpark-web (Docker) + smartpark-db (Postgres).
+#   3. In Render > smartpark-web > Settings, copy the Deploy Hook URL.
+#   4. In GitHub repo > Settings > Secrets and variables > Actions, add:
+#        RENDER_DEPLOY_HOOK_URL = <hook URL from step 3>
+#        RENDER_APP_URL         = https://<your-service>.onrender.com (no trailing slash)
+#   5. In Render > smartpark-web > Environment, fill the sync:false vars
+#      below (admin password, PayHero/PayPal, KRA details). Never commit them.
+#
+# Notes:
+#   - autoDeploy:false is INTENTIONAL: pushes do NOT go live until tests +
+#     GHCR smoke-test pass and the Action fires the hook. This is the gate
+#     that keeps broken code off your live lot.
+#   - The disk persists /app/data (SQLite fallback + backup staging) across
+#     restarts/redeploys. Postgres remains the source of truth when
+#     DATABASE_URL is set (it is, via fromDatabase below).
+#   - Disks require a paid instance type (starter or higher). If you stay on
+#     free, delete the `disk:` block before applying the Blueprint.
+services:
+  - type: web
+    name: smartpark-web
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Render injects PORT automatically; our Dockerfile CMD binds
+    # gunicorn to $PORT, and app.py falls back to 5000 locally.
+    autoDeploy: false
+    plan: starter
+    healthCheckPath: /health/live
+    disk:
+      name: smartpark-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smartpark-db
+          property: connectionString
+      - key: SQLITE_DB_PATH
+        value: /app/data/smartpark.db
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: LOG_LEVEL
+        value: INFO
+      - key: BACKUP_RETENTION_COUNT
+        value: "14"
+      # --- Fill once in Render dashboard (sync:false = Blueprint never overwrites) ---
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PAYHERO_AUTH_TOKEN
+        sync: false
+      - key: PAYHERO_CHANNEL_ID
+        sync: false
+      - key: PAYHERO_API_BASE_URL
+        value: https://backend.payhero.co.ke/api/v2
+      - key: PAYHERO_CALLBACK_URL
+        sync: false
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_CURRENCY
+        value: USD
+      - key: PAYPAL_KES_TO_CURRENCY_RATE
+        sync: false
+      - key: PAYPAL_RETURN_URL
+        sync: false
+      - key: PAYPAL_CANCEL_URL
+        sync: false
+      - key: BUSINESS_NAME
+        value: SmartPark KE
+      - key: BUSINESS_ADDRESS
+        sync: false
+      - key: KRA_PIN
+        sync: false
+
+databases:
+  - name: smartpark-db
+    databaseName: smartpark
+    user: smartpark
+    # Free Postgres expires after 30 days on Render. For a continuously
+    # running lot, switch this to `basic_256mb` (paid, persistent).
+    plan: free

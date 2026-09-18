@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartPark KE — Live Parking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="bg-scene" aria-hidden="true">
+  <div class="bg-glow bg-glow--amber"></div>
+  <div class="bg-glow bg-glow--teal"></div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+<div class="payment-modal" id="payment-modal" hidden role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
+  <div class="payment-modal__card">
+    <div class="payment-modal__icon" id="payment-modal-icon" aria-hidden="true">⌛</div>
+    <h2 id="payment-modal-title">Waiting for payment</h2>
+    <p id="payment-modal-message">Check your phone and enter your M-Pesa PIN to continue.</p>
+    <button type="button" class="btn btn--primary" id="payment-modal-close" hidden>Close</button>
+  </div>
+</div>
+
+<div class="receipt-modal" id="receipt-modal" hidden role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+  <article class="receipt-card">
+    <div class="receipt-card__head">
+      <div>
+        <span class="receipt-card__eyebrow" id="receipt-business-name">SmartPark KE</span>
+        <span class="receipt-card__merchant" id="receipt-business-details"></span>
+        <h2 id="receipt-title">Payment receipt</h2>
+      </div>
+      <span class="receipt-card__check">Paid</span>
+    </div>
+    <div class="receipt-card__number" id="receipt-number">Receipt —</div>
+    <div class="receipt-card__details" id="receipt-details"></div>
+    <div class="receipt-card__signature">
+      <span>Electronic signature</span>
+      <strong class="receipt-card__signature-mark">SmartPark KE</strong>
+      <code id="receipt-signature">—</code>
+    </div>
+    <div class="receipt-card__qr">
+      <img id="receipt-qr" alt="Scan to verify this receipt">
+      <span>Scan to verify receipt and vehicle payment</span>
+    </div>
+    <div class="receipt-card__actions">
+      <button type="button" class="btn btn--primary" id="receipt-print">Print receipt</button>
+      <button type="button" class="page-btn" id="receipt-close">Close</button>
+    </div>
+  </article>
+</div>
+
+<div class="payment-modal" id="login-modal" hidden role="dialog" aria-modal="true" aria-labelledby="login-title">
+  <form class="payment-modal__card login-card" id="login-form">
+    <div class="payment-modal__icon" aria-hidden="true">&#128274;</div>
+    <h2 id="login-title">Dashboard sign in</h2>
+    <p>Sign in to manage rates and export audit reports.<br><strong>Default password: manager123</strong></p>
+    <label class="field"><span>Username</span><input name="username" required autocomplete="username"></label>
+    <label class="field"><span>Password</span><input type="password" name="password" required autocomplete="current-password"></label>
+    <label class="field" id="mfa-login-field" hidden><span>Authenticator code</span><input name="mfa_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}"></label>
+    <button type="submit" class="btn btn--primary">Sign in</button>
+    <button type="button" class="page-btn" id="login-close">Cancel</button>
+  </form>
+</div>
+
+<div class="payment-modal" id="profile-modal" hidden role="dialog" aria-modal="true" aria-labelledby="profile-title">
+  <section class="profile-card">
+    <div class="profile-card__head"><div><span class="section-kicker">Account</span><h2 id="profile-title">Profile &amp; security</h2></div><button type="button" class="page-btn" id="profile-close">Close</button></div>
+    <form id="profile-form" class="profile-section">
+      <h3>Account details</h3>
+      <label class="field"><span>Username</span><input id="profile-username" name="username" required minlength="3"></label>
+      <label class="field"><span>Current password</span><input name="current_password" type="password" required></label>
+      <label class="field"><span>New password</span><input name="new_password" type="password" minlength="8" placeholder="Leave blank to keep current"></label>
+      <button class="btn btn--primary" type="submit">Save account changes</button>
+    </form>
+    <section class="profile-section">
+      <div class="profile-section__title"><h3>Two-factor authentication</h3><span id="mfa-status">Not enabled</span></div>
+      <p id="mfa-help">Use an authenticator app to protect this account.</p>
+      <button class="btn btn--primary" type="button" id="mfa-setup">Set up authenticator</button>
+      <div id="mfa-setup-area" hidden>
+        <code id="mfa-secret"></code>
+        <label class="field"><span>Verification code</span><input id="mfa-code" inputmode="numeric" pattern="[0-9]{6}"></label>
+        <button class="btn btn--success" type="button" id="mfa-enable">Enable MFA</button>
+      </div>
+      <button class="page-btn" type="button" id="mfa-disable" hidden>Disable MFA</button>
+    </section>
+    <section class="profile-section">
+      <div class="profile-section__title"><h3>Active sessions</h3><span>12-hour expiry</span></div>
+      <div id="profile-sessions" class="profile-sessions"></div>
+    </section>
+  </section>
+</div>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <div class="brand">
+      <span class="brand__mark">
+        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+          <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--amber)"/>
+          <path d="M11 8h7.2c3.4 0 5.8 2.2 5.8 5.4 0 3.2-2.4 5.4-5.8 5.4H14.6V24H11V8zm3.6 3v4.8h3.4c1.6 0 2.7-1 2.7-2.4s-1.1-2.4-2.7-2.4h-3.4z" fill="var(--ink)"/>
+        </svg>
+      </span>
+      <div class="brand__text">
+        <span class="brand__name">SmartPark <em>KE</em></span>
+        <span class="brand__sub">Automated Parking &amp; Access Control</span>
+      </div>
+    </div>
+    <nav class="topnav" aria-label="Primary navigation">
+      <a class="topnav__link is-active" href="#overview">Overview</a>
+      <a class="topnav__link" href="#operations">Entry / Exit</a>
+      <a class="topnav__link" href="#rates">Rates</a>
+      <a class="topnav__link" href="#slots">Slots</a>
+      <a class="topnav__link" href="#activity">Activity</a>
+    </nav>
+    <div class="topbar__right">
+      <span class="live-pill"><i class="live-pill__dot"></i>Live</span>
+      <span class="topbar__clock" id="clock">--:--:--</span>
+      <button type="button" class="topbar__auth" id="auth-btn">Sign in</button>
+      <button type="button" class="topbar__auth" id="profile-btn" hidden>Profile</button>
+    </div>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- HERO: live availability + animated barrier scene -->
+  <section class="hero" id="overview">
+    <div class="panel hero__counts">
+      <div class="hero__stat">
+        <span class="hero__num" id="stat-available">0</span>
+        <span class="hero__label">bays free right now</span>
+      </div>
+      <div class="hero__breakdown" id="stat-breakdown"><!-- filled by JS --></div>
+    </div>
+
+    <div class="panel barrier-panel">
+      <div class="barrier-scene" id="barrier">
+        <svg class="barrier-svg" viewBox="0 0 320 190" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+          <!-- ground -->
+          <rect x="0" y="132" width="320" height="58" fill="url(#roadGrad)"/>
+          <line x1="0" y1="132" x2="320" y2="132" stroke="#2C3B4E" stroke-width="1.5"/>
+          <!-- lane markings -->
+          <g stroke="#3A4D63" stroke-width="4" stroke-dasharray="14 12">
+            <line x1="0" y1="161" x2="320" y2="161"/>
+          </g>
+          <!-- kiosk -->
+          <rect x="14" y="88" width="30" height="46" rx="4" fill="#1E2A39" stroke="#2C3B4E"/>
+          <rect x="19" y="95" width="20" height="14" rx="2" fill="#3ED9A0" opacity="0.35"/>
+          <!-- posts -->
+          <rect x="96" y="72" width="11" height="64" rx="3" fill="#263447"/>
+          <rect x="222" y="72" width="11" height="64" rx="3" fill="#263447"/>
+          <!-- barrier arm, pivots at left post -->
+          <g id="armGroup" transform="rotate(0 101.5 84)">
+            <rect x="101.5" y="79" width="128" height="10" rx="5" fill="url(#armGrad)" stroke="#12181f" stroke-width="1"/>
+            <rect x="101.5" y="79" width="128" height="10" rx="5" fill="url(#stripes)" opacity="0.9"/>
+            <circle cx="101.5" cy="84" r="7" fill="#1E2A39" stroke="#3A4D63"/>
+            <circle cx="229.5" cy="84" r="4" fill="#F2A93B" id="armTip"/>
+          </g>
+          <!-- car silhouette, starts off-canvas left -->
+          <g id="carGroup" transform="translate(-70 0)" opacity="0">
+            <rect x="0" y="118" width="52" height="20" rx="6" fill="#EAF1F7"/>
+            <rect x="9" y="106" width="30" height="16" rx="5" fill="#EAF1F7"/>
+            <rect x="12" y="109" width="10" height="9" rx="1.5" fill="#0E141D" opacity="0.55"/>
+            <rect x="24" y="109" width="12" height="9" rx="1.5" fill="#0E141D" opacity="0.55"/>
+            <circle cx="13" cy="138" r="6" fill="#0E141D"/>
+            <circle cx="39" cy="138" r="6" fill="#0E141D"/>
+            <circle cx="13" cy="138" r="2.4" fill="#3A4D63"/>
+            <circle cx="39" cy="138" r="2.4" fill="#3A4D63"/>
+            <rect x="-3" y="124" width="5" height="4" rx="1.5" fill="#F2A93B"/>
+          </g>
+          <defs>
+            <linearGradient id="roadGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#1A222D"/>
+              <stop offset="1" stop-color="#141B24"/>
+            </linearGradient>
+            <linearGradient id="armGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#F2A93B"/>
+              <stop offset="1" stop-color="#D98F27"/>
+            </linearGradient>
+            <pattern id="stripes" width="20" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(28)">
+              <rect width="10" height="10" fill="#12181f"/>
+            </pattern>
+          </defs>
+        </svg>
+      </div>
+      <p class="barrier-caption" id="barrier-caption">Barrier closed</p>
+    </div>
+  </section>
+
+  <!-- ENTRY / EXIT -->
+  <section class="ops" id="operations">
+    <form class="panel card" id="entry-form" autocomplete="off">
+      <div class="card__head">
+        <span class="card__icon card__icon--in" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="16" height="16"><path d="M10 3v14M5 8l5-5 5 5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <h2>Vehicle entry</h2>
+      </div>
+      <label class="field">
+        <span>Number plate</span>
+        <input type="text" name="plate_number" placeholder="KDA 123B" required>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Vehicle type</span>
+          <span class="select-shell">
+            <select name="vehicle_type">
+              <option value="car">Car</option>
+              <option value="motorcycle">Motorcycle</option>
+              <option value="van">Van</option>
+            </select>
+          </span>
+        </label>
+        <label class="field">
+          <span>Phone number</span>
+          <input type="tel" name="owner_phone" placeholder="07xx xxx xxx" required>
+        </label>
+      </div>
+      <button type="submit" class="btn btn--primary">
+        <span>Check in vehicle</span>
+      </button>
+    </form>
+
+    <form class="panel card" id="exit-form" autocomplete="off">
+      <div class="card__head">
+        <span class="card__icon card__icon--out" aria-hidden="true">
+          <svg viewBox="0 0 20 20" width="16" height="16"><path d="M10 17V3M5 12l5 5 5-5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <h2>Vehicle exit</h2>
+      </div>
+      <label class="field">
+        <span>Number plate</span>
+        <input type="text" name="plate_number" placeholder="KDA 123B" required>
+      </label>
+      <button type="submit" class="btn btn--primary">
+        <span>Calculate fee</span>
+      </button>
+
+      <div class="fee-box" id="fee-box" hidden>
+        <div class="fee-box__row">
+          <span>Duration</span>
+          <strong id="fee-duration">—</strong>
+        </div>
+        <div class="fee-box__row">
+          <span>Subtotal</span>
+          <strong id="fee-subtotal">KES 0</strong>
+        </div>
+        <div class="fee-box__row">
+          <span>VAT (<span id="fee-vat-rate">16</span>%)</span>
+          <strong id="fee-vat">KES 0</strong>
+        </div>
+        <div class="fee-box__row fee-box__row--total">
+          <span>Total amount due</span>
+          <strong id="fee-amount">KES 0</strong>
+        </div>
+        <div class="fee-box__row" id="stk-phone-row" hidden>
+          <span>STK push to</span>
+          <strong id="stk-phone">—</strong>
+        </div>
+        <div class="fee-box__methods" id="fee-methods" role="radiogroup" aria-label="Payment method">
+          <button type="button" class="chip is-active" data-method="mpesa">M-Pesa</button>
+          <button type="button" class="chip" data-method="cash">Cash</button>
+          <button type="button" class="chip" data-method="card">Card</button>
+        </div>
+        <button type="button" class="btn btn--success" id="pay-btn">
+          <span id="pay-btn-label">Send STK push &amp; pay</span>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="rate-panel panel" id="rates">
+    <div class="rate-panel__head">
+      <div>
+        <span class="section-kicker">Management</span>
+        <h2>Parking rates</h2>
+      </div>
+      <div class="rate-panel__actions">
+        <label class="vat-setting">VAT rate (%)
+          <input id="vat-rate" type="number" min="0" max="100" step="0.01" value="16">
+        </label>
+        <button type="button" class="btn btn--primary" id="save-rates">Save rates</button>
+      </div>
+    </div>
+    <p class="rate-panel__hint">Changes apply to the next vehicle checkout.</p>
+    <div class="rates" id="rates-list"></div>
+  </section>
+
+  <!-- SLOT MAP -->
+  <section class="lot" id="slots">
+    <div class="lot__head">
+      <h2>Live slot map</h2>
+      <div class="tabs" id="zone-tabs">
+        <button class="tab is-active" data-type="car">Cars</button>
+        <button class="tab" data-type="motorcycle">Motorcycles</button>
+        <button class="tab" data-type="van">Vans</button>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="dot dot--free"></i> Available</span>
+      <span><i class="dot dot--occupied"></i> Occupied</span>
+    </div>
+    <div class="grid" id="slot-grid"><!-- filled by JS --></div>
+  </section>
+
+  <!-- ACTIVITY -->
+  <section class="activity" id="activity">
+    <div class="activity__head">
+      <h2>Recent activity</h2>
+      <div class="activity__controls">
+        <label class="activity__search">
+          <span class="sr-only">Search activity</span>
+          <input type="search" id="activity-search" placeholder="Search plate, slot or status" autocomplete="off">
+        </label>
+        <label class="activity__select select-shell">
+          <span class="sr-only">Sort activity by</span>
+          <select id="activity-sort">
+            <option value="date">Sort: date</option>
+            <option value="status">Sort: status</option>
+            <option value="fee">Sort: fee</option>
+          </select>
+        </label>
+        <label class="activity__select select-shell">
+          <span class="sr-only">Sort direction</span>
+          <select id="activity-order">
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+        </label>
+        <div class="activity__exports" aria-label="Export reports">
+          <a class="report-btn" href="/api/reports/export?format=xlsx" download>Excel</a>
+          <a class="report-btn" href="/api/reports/export?format=pdf" download>PDF</a>
+          <a class="report-btn" href="/api/reports/export?format=docx" download>Word</a>
+        </div>
+      </div>
+    </div>
+    <div class="activity__table" id="activity-list">
+      <p class="activity__empty">No activity yet today.</p>
+    </div>
+    <div class="activity__pagination" aria-label="Recent activity pages">
+      <span class="activity__range" id="activity-range" aria-live="polite">Showing 0 records</span>
+      <div class="activity__page-controls">
+        <button type="button" class="page-btn" id="activity-prev" aria-label="Previous activity page">&#8592; Previous</button>
+        <span class="activity__page" id="activity-page">Page 1 of 1</span>
+        <button type="button" class="page-btn" id="activity-next" aria-label="Next activity page">Next &#8594;</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <p>SmartPark KE — Automated Parking &amp; Access Control.</p>
+</footer>
+
+<script src="{{ url_for('static', filename='js/app.js', v='20260918-auth') }}"></script>
+</body>
+</html>

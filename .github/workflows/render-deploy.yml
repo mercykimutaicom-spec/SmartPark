@@ -1,0 +1,93 @@
+# ---- SmartPark KE: gated auto-deploy to Render (runs by itself) ----
+# Chain: push to main -> CI green -> Docker/GHCR green + smoke-test green
+#        -> THIS workflow fires the Render Deploy Hook -> Render pulls,
+#        restarts gunicorn, runs /health/live checks -> live.
+# Broken code never reaches Render because the workflow_run gate only
+# fires the hook when the Docker/GHCR run succeeded on main.
+#
+# Required GitHub secrets (repo > Settings > Secrets and variables > Actions):
+#   RENDER_DEPLOY_HOOK_URL : Render > smartpark-web > Settings > Deploy Hook (copy URL)
+#   RENDER_APP_URL         : https://<your-service>.onrender.com (no trailing slash)
+#
+# Safety: hook URL is a deploy-only secret (cannot read other settings).
+# Never log it: all curl calls below run with output redacted on failure.
+name: Render Deploy
+
+on:
+  workflow_run:
+    workflows: ["Docker / GHCR"]
+    types: [completed]
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: render-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Trigger Render deploy hook (main only, green build only)
+    # workflow_run fires for every Docker/GHCR completion; proceed only when
+    # that run succeeded ON main (tags/manual runs must not auto-deploy).
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deploy secrets are configured
+        run: |
+          missing=0
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "::error::Missing secret RENDER_DEPLOY_HOOK_URL (Render > smartpark-web > Settings > Deploy Hook)."
+            missing=1
+          fi
+          if [ -z "${{ secrets.RENDER_APP_URL }}" ]; then
+            echo "::error::Missing secret RENDER_APP_URL (e.g. https://smartpark-web.onrender.com)."
+            missing=1
+          fi
+          if [ "$missing" = "1" ]; then exit 1; fi
+
+      - name: Fire Render Deploy Hook
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/render_hook.out -w "%{http_code}" -X POST \
+            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "hook_http=$code"
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            echo "::error::Deploy hook rejected (HTTP $code)."
+            head -c 500 /tmp/render_hook.out
+            exit 1
+          fi
+          echo "Deploy hook accepted; Render is pulling and restarting."
+
+      - name: Wait for Render to become live and ready
+        env:
+          APP_URL: ${{ secrets.RENDER_APP_URL }}
+        run: |
+          set -euo pipefail
+          echo "Probing $APP_URL/health/live ..."
+          ok=0
+          for i in $(seq 1 40); do
+            if curl -fsS --max-time 10 "$APP_URL/health/live" >/dev/null 2>&1; then ok=1; break; fi
+            echo "attempt $i/40: not live yet (Render may still be deploying)..."
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Timed out waiting for /health/live after deploy hook."
+            exit 1
+          fi
+          echo "--- /health/live ---"
+          curl -fsS --max-time 15 "$APP_URL/health/live"
+          echo ""
+          echo "--- /health/ready ---"
+          if ! curl -fsS --max-time 15 "$APP_URL/health/ready"; then
+            echo "::error::/health/ready not ready (check DATABASE_URL/provider config in Render)."
+            exit 1
+          fi
+          echo ""
+          echo "Render deploy verified: live + ready."

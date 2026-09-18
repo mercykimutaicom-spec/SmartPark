@@ -1,0 +1,19 @@
+dockerignore
+===========
+
+# Build context hygiene + secret safety: never ship local state,
+# credentials, or caches into the published image.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.github/
+.gitignore
+.env
+.env.local
+smartpark.db
+backups/
+data/
+*.backup
+.vscode/

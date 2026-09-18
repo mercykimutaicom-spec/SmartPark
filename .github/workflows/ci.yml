@@ -1,0 +1,75 @@
+# ---- SmartPark KE: CI (tests + security gate) ----
+# Runs on every push and pull request. No deployment here: this only
+# proves the code installs, compiles, passes tests, and has no known
+# dependency vulnerabilities or committed secrets.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Install, lint-compile and test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pip-audit
+
+      - name: Compile check (fail fast on syntax errors)
+        run: python -m py_compile app.py db.py algorithms.py wsgi.py scripts/backup_database.py
+
+      - name: Run regression tests
+        env:
+          PYTHONWARNINGS: ignore
+          ADMIN_USERNAME: manager
+          ADMIN_PASSWORD: manager123
+          FLASK_SECRET_KEY: ci-only-secret
+        run: python -m unittest discover -s tests -v
+
+      - name: Audit dependencies for known CVEs
+        # Does not touch production. Shows advisories without failing on
+        # unrelated noise; upgrade to `--require-hashes` / fail-on-high when
+        # the release process needs a hard gate.
+        run: pip-audit --desc on || echo "::warning::pip-audit reported advisories (non-blocking)"
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan history and working tree for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

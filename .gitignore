@@ -1,0 +1,10 @@
+smartpark.db
+*.backup
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.env.local
+backups/
+data/
