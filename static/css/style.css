@@ -433,6 +433,7 @@ main section[id]{ scroll-margin-top:92px; }
 .profile-section h3{ font-size:1rem; }
 .profile-section__title{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .profile-section__title span, #mfa-status{ color:var(--text-faint); font-size:0.75rem; }
+
 .profile-section p{ margin:0; color:var(--text-dim); font-size:0.8rem; }
 .profile-section code{ padding:10px 12px; border:1px dashed var(--amber); border-radius:var(--radius-s); color:var(--amber); overflow-wrap:anywhere; }
 .profile-sessions{ display:flex; flex-direction:column; gap:7px; }
@@ -517,3 +518,21 @@ main section[id]{ scroll-margin-top:92px; }
   .btn, .fee-box, .toast, .slot{ animation: none !important; transition: none !important; }
 }
 :focus-visible{ outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ---- Attendant tools / analytics / ticket (feature pack) ---- */
+.tools{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; margin:26px 0; }
+.tools__divider{ border:0; border-top:1px solid var(--line,#2C3B4E); margin:16px 0; }
+.plate-results{ margin-top:12px; display:grid; gap:8px; }
+.plate-results__row{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; font-size:0.82rem; }
+.plate-results__row strong{ color:var(--amber); }
+.analytics{ margin:26px 0 8px; }
+.analytics__grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px; margin-top:14px; }
+.analytics__grid h3{ font-size:0.95rem; margin:0 0 12px; }
+.analytics__row{ display:grid; grid-template-columns:88px 1fr 90px; align-items:center; gap:10px; margin-bottom:8px; font-size:0.78rem; }
+.analytics__label{ color:var(--text-dim,#8fa1b8); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.analytics__bar{ height:8px; background:rgba(255,255,255,0.07); border-radius:99px; overflow:hidden; }
+.analytics__bar i{ display:block; height:100%; background:linear-gradient(90deg,var(--amber),#3ED9A0); border-radius:99px; }
+.analytics__value{ text-align:right; color:var(--text-faint,#8fa1b8); }
+.ticket{ display:grid; justify-items:center; gap:12px; }
+.ticket img{ width:200px; height:200px; image-rendering:pixelated; background:#fff; padding:8px; border-radius:12px; }
+.ticket__code{ max-width:100%; overflow-wrap:anywhere; font-size:0.72rem; color:var(--amber); }

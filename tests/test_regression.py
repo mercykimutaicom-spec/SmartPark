@@ -17,6 +17,9 @@ class SmartParkRegressionTests(unittest.TestCase):
         import app
         cls.app = app.app
         cls.algorithms = app.algorithms
+        # Rebuild the slot heap/trie cache against THIS temp database so
+        # tests never inherit allocation state from another test module.
+        cls.algorithms.load_heaps_from_db()
 
     @classmethod
     def tearDownClass(cls):

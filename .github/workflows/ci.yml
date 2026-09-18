@@ -44,7 +44,7 @@ jobs:
           pip install pip-audit
 
       - name: Compile check (fail fast on syntax errors)
-        run: python -m py_compile app.py db.py algorithms.py wsgi.py scripts/backup_database.py
+        run: python -m py_compile app.py db.py algorithms.py wsgi.py scripts/backup_database.py tests/*.py
 
       - name: Run regression tests
         env:

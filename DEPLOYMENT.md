@@ -15,6 +15,8 @@ Copy `.env.example` to `.env` and set real values. Never commit `.env`.
 - `PAYPAL_CURRENCY` and `PAYPAL_KES_TO_CURRENCY_RATE`: explicit currency conversion for PayPal, since parking fees are stored in KES.
 - `BUSINESS_NAME`, `BUSINESS_ADDRESS`, `KRA_PIN`: receipt and VAT invoice identity.
 - `BACKUP_RETENTION_COUNT`: number of most recent backups to retain.
+- `OVERSTAY_HOURS`: active sessions longer than this raise an attendant
+    overstay alert (default `8`).
 - `LOG_LEVEL`: application log level, normally `INFO` in production.
 
 ## Render: run by itself (web + Postgres + disk + gated auto-deploy)

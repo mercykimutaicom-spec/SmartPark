@@ -147,6 +147,16 @@ CREATE TABLE IF NOT EXISTS payments (
     updated_at TEXT,
     receipt_number TEXT UNIQUE
 );
+
+CREATE TABLE IF NOT EXISTS override_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at   TEXT NOT NULL,
+    username     TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    target       TEXT NOT NULL,
+    reason       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_override_created ON override_events(created_at);
 """
 
 POSTGRES_SCHEMA_SQL = """
@@ -197,6 +207,12 @@ CREATE TABLE IF NOT EXISTS payments (
     status TEXT NOT NULL DEFAULT 'success', initiated_at TEXT, updated_at TEXT,
     receipt_number TEXT UNIQUE
 );
+
+CREATE TABLE IF NOT EXISTS override_events (
+    id SERIAL PRIMARY KEY, created_at TEXT NOT NULL, username TEXT NOT NULL,
+    action TEXT NOT NULL, target TEXT NOT NULL, reason TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_override_created ON override_events(created_at);
 """
 
 

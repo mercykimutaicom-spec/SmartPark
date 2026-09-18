@@ -105,6 +105,8 @@
       <a class="topnav__link" href="#rates">Rates</a>
       <a class="topnav__link" href="#slots">Slots</a>
       <a class="topnav__link" href="#activity">Activity</a>
+      <a class="topnav__link" href="#tools">Tools</a>
+      <a class="topnav__link" href="#analytics">Analytics</a>
     </nav>
     <div class="topbar__right">
       <span class="live-pill"><i class="live-pill__dot"></i>Live</span>
@@ -222,6 +224,11 @@
         </span>
         <h2>Vehicle exit</h2>
       </div>
+      <label class="field">
+        <span>Ticket code (optional — scan or paste)</span>
+        <input type="text" name="ticket_code" id="ticket-code" placeholder="SP-TK-…" autocomplete="off">
+      </label>
+      <button type="button" class="page-btn" id="use-ticket">Use ticket &rarr; fill plate</button>
       <label class="field">
         <span>Number plate</span>
         <input type="text" name="plate_number" placeholder="KDA 123B" required>
@@ -341,12 +348,70 @@
     </div>
   </section>
 
+  <!-- ATTENDANT TOOLS (manager): trie search, overrides, analytics -->
+  <section class="tools" id="tools">
+    <div class="panel card">
+      <div class="card__head"><h2>Plate lookup</h2></div>
+      <p class="rate-panel__hint">Trie-backed prefix search over every vehicle ever checked in.</p>
+      <label class="field"><span>Plate starts with</span>
+        <input type="text" id="plate-prefix" placeholder="KDA" autocomplete="off">
+      </label>
+      <button type="button" class="btn btn--primary" id="plate-search">Search plates</button>
+      <div id="plate-results" class="plate-results" hidden></div>
+    </div>
+
+    <div class="panel card">
+      <div class="card__head"><h2>Overrides</h2></div>
+      <p class="rate-panel__hint">Every override is written to the audit trail (who / when / why). Barrier override works only for already-paid sessions — unpaid vehicles can never bypass the barrier.</p>
+      <label class="field"><span>Slot number (out of service / back in service)</span>
+        <input type="number" id="maintenance-slot" min="1" placeholder="e.g. 7">
+      </label>
+      <label class="field"><span>Reason</span>
+        <input type="text" id="maintenance-reason" placeholder="Jammed lock, repainting…" autocomplete="off">
+      </label>
+      <div class="field-row">
+        <button type="button" class="btn btn--primary" id="maintenance-off">Out of service</button>
+        <button type="button" class="page-btn" id="maintenance-on">Back in service</button>
+      </div>
+      <hr class="tools__divider">
+      <label class="field"><span>Force-open barrier for session # (must be paid)</span>
+        <input type="number" id="override-session" min="1" placeholder="Session ID">
+      </label>
+      <label class="field"><span>Reason</span>
+        <input type="text" id="override-reason" placeholder="Sensor missed the car…" autocomplete="off">
+      </label>
+      <button type="button" class="btn btn--primary" id="override-open">Force open barrier</button>
+    </div>
+  </section>
+
+  <!-- ANALYTICS (manager) -->
+  <section class="analytics" id="analytics">
+    <div class="activity__head">
+      <h2>Analytics</h2>
+      <span class="section-kicker" id="analytics-window">Last 14 days</span>
+    </div>
+    <div class="analytics__grid" id="analytics-grid"><!-- filled by JS --></div>
+  </section>
+
+<!-- Entry ticket QR (quick win #1) -->
+<div class="payment-modal" id="ticket-modal" hidden role="dialog" aria-modal="true" aria-labelledby="ticket-title">
+  <section class="profile-card">
+    <div class="profile-card__head"><div><span class="section-kicker">Entry ticket</span><h2 id="ticket-title">Scan at exit</h2></div><button type="button" class="page-btn" id="ticket-close">Close</button></div>
+    <div class="ticket">
+      <img id="ticket-qr" alt="Entry ticket QR code">
+      <p class="rate-panel__hint">This QR encodes a signed ticket. At the exit panel, paste the code (or scan it) to auto-fill the plate.</p>
+      <code id="ticket-code" class="ticket__code"></code>
+      <button type="button" class="page-btn" id="ticket-copy">Copy ticket code</button>
+    </div>
+  </section>
+</div>
+
 </main>
 
 <footer class="foot">
   <p>SmartPark KE — Automated Parking &amp; Access Control.</p>
 </footer>
 
-<script src="{{ url_for('static', filename='js/app.js', v='20260918-auth') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js', v='20260918-features') }}"></script>
 </body>
 </html>

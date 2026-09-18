@@ -50,6 +50,8 @@ services:
         value: INFO
       - key: BACKUP_RETENTION_COUNT
         value: "14"
+      - key: OVERSTAY_HOURS
+        value: "8"
       # --- Fill once in Render dashboard (sync:false = Blueprint never overwrites) ---
       - key: ADMIN_USERNAME
         sync: false

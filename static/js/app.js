@@ -449,7 +449,7 @@
           <span class="meta">${entryTime}</span>
           <span class="meta">${checkoutTime}</span>
           <span class="meta">${feeText}</span>
-          <span class="activity__status activity__status--${s.status}">${s.status.replace("_", " ")}</span>
+          <span class="activity__status activity__status--${s.status}">${s.status.replace("_", " ")}${s.overstay ? " &#9888; overstay" : ""}</span>
           <span class="meta">${s.receipt_number || "—"}</span>
         </div>`;
       }).join("");
@@ -480,6 +480,167 @@
     renderActivity();
   });
 
+  // ---- Attendant tools: trie plate search -------------------------------------
+  document.getElementById("plate-search").addEventListener("click", async () => {
+    const prefix = document.getElementById("plate-prefix").value.trim();
+    const box = document.getElementById("plate-results");
+    if (!prefix) { toast("Type a plate prefix (e.g. KDA).", "error"); return; }
+    try {
+      const res = await fetch(`/api/plates?prefix=${encodeURIComponent(prefix)}`);
+      if (res.status === 401 || res.status === 403) {
+        toast("Sign in as manager to search plates.", "error");
+        return;
+      }
+      const data = await res.json();
+      if (!data.ok) { toast(data.error, "error"); return; }
+      box.hidden = false;
+      box.innerHTML = data.matches.length
+        ? data.matches.map((m) => `<div class="plate-results__row"><strong>${escapeHtml(m.plate_number)}</strong><span>${m.status === "active" ? `parked — slot ${m.slot_number}` : "not currently parked"}</span></div>`).join("")
+        : '<p class="activity__empty">No plates match that prefix.</p>';
+    } catch (err) {
+      toast("Plate search failed.", "error");
+    }
+  });
+
+  // ---- Attendant tools: maintenance + barrier override ------------------------
+  async function postOverride(url, payload, successMessage) {
+    try {
+      const res = await fetch(url, { method: "POST", headers: jsonHeaders(), body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (res.status === 401 || res.status === 403) {
+        toast("Manager sign-in required for overrides.", "error");
+        playChime("error");
+        return;
+      }
+      if (!data.ok) { toast(data.error, "error"); playChime("error"); return; }
+      toast(successMessage, "success");
+      playChime("success");
+      refreshSlots();
+    } catch (err) {
+      toast("Override failed — is the server running?", "error");
+      playChime("error");
+    }
+  }
+  document.getElementById("maintenance-off").addEventListener("click", () => {
+    const slot = document.getElementById("maintenance-slot").value;
+    const reason = document.getElementById("maintenance-reason").value.trim();
+    if (!slot || !reason) { toast("Slot number and reason are required.", "error"); return; }
+    postOverride(`/api/slots/${slot}/maintenance`, { out_of_service: true, reason }, `Slot ${slot} marked out of service.`);
+  });
+  document.getElementById("maintenance-on").addEventListener("click", () => {
+    const slot = document.getElementById("maintenance-slot").value;
+    const reason = document.getElementById("maintenance-reason").value.trim();
+    if (!slot || !reason) { toast("Slot number and reason are required.", "error"); return; }
+    postOverride(`/api/slots/${slot}/maintenance`, { out_of_service: false, reason }, `Slot ${slot} back in service.`);
+  });
+  document.getElementById("override-open").addEventListener("click", () => {
+    const sessionId = document.getElementById("override-session").value;
+    const reason = document.getElementById("override-reason").value.trim();
+    if (!sessionId || !reason) { toast("Session ID and reason are required.", "error"); return; }
+    postOverride("/api/barrier/override", { session_id: sessionId, reason }, "Barrier open signal sent (audited).");
+  });
+
+  // ---- Analytics (manager) ------------------------------------------------------
+  async function loadAnalytics() {
+    try {
+      const res = await fetch("/api/analytics");
+      if (res.status === 401 || res.status === 403) return; // section stays empty
+      const data = await res.json();
+      if (!data.ok) return;
+      const a = data.analytics;
+      document.getElementById("analytics-window").textContent =
+        `Last ${a.window_days} days · KES ${a.total_revenue} total${data.overstays ? ` · ${data.overstays} overstay alert${data.overstays > 1 ? "s" : ""}` : ""}`;
+      const dayMax = Math.max(1, ...a.revenue_by_day.map((d) => d.amount));
+      const hourMax = Math.max(1, ...a.revenue_by_hour_today.map((d) => d.amount));
+      const bar = (label, value, max, caption) =>
+        `<div class="analytics__row"><span class="analytics__label">${label}</span>
+           <span class="analytics__bar"><i style="width:${Math.round((value / max) * 100)}%"></i></span>
+           <span class="analytics__value">${caption}</span></div>`;
+      document.getElementById("analytics-grid").innerHTML = `
+        <div class="panel card"><h3>Revenue by day</h3>
+          ${a.revenue_by_day.length ? a.revenue_by_day.map((d) => bar(d.date, d.amount, dayMax, `KES ${d.amount}`)).join("") : '<p class="activity__empty">No paid sessions in this window.</p>'}
+        </div>
+        <div class="panel card"><h3>Revenue by hour (today)</h3>
+          ${a.revenue_by_hour_today.length ? a.revenue_by_hour_today.map((d) => bar(`${String(d.hour).padStart(2, "0")}:00`, d.amount, hourMax, `KES ${d.amount}`)).join("") : '<p class="activity__empty">No payments yet today.</p>'}
+        </div>
+        <div class="panel card"><h3>Occupancy by zone</h3>
+          ${a.occupancy_by_zone.map((z) => `<div class="plate-results__row"><strong>Zone ${escapeHtml(z.zone)}</strong><span>${z.occupied} occupied · ${z.available} free${z.maintenance ? ` · ${z.maintenance} out of service` : ""} · ${Math.round(z.utilization * 100)}% full</span></div>`).join("")}
+        </div>
+        <div class="panel card"><h3>Insights</h3>
+          <div class="plate-results__row"><strong>Busiest zone</strong><span>${a.busiest_zone ? `Zone ${escapeHtml(a.busiest_zone.zone)} (${a.busiest_zone.sessions} sessions)` : "—"}</span></div>
+          ${a.revenue_by_method.map((m) => `<div class="plate-results__row"><strong>${escapeHtml(m.method)}</strong><span>KES ${m.amount}</span></div>`).join("")}
+          ${a.avg_duration_by_zone.map((z) => `<div class="plate-results__row"><strong>Zone ${escapeHtml(z.zone)} avg stay</strong><span>${z.avg_minutes} min</span></div>`).join("")}
+        </div>`;
+    } catch (err) {
+      console.error("Analytics load failed", err);
+    }
+  }
+  loadAnalytics();
+
+  // ---- Sound cues (WebAudio — no assets needed) -------------------------------
+  let audioCtx = null;
+  function playChime(kind = "success") {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const now = audioCtx.currentTime;
+      const notes = kind === "success" ? [[523.25, 0], [659.25, 0.12], [783.99, 0.24]]
+        : kind === "alert" ? [[440, 0], [554.37, 0.15]]
+        : [[220, 0], [174.61, 0.16]];
+      notes.forEach(([freq, offset]) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = kind === "error" ? "sawtooth" : "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.08, now + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.22);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.25);
+      });
+    } catch (err) { /* audio is best-effort; never block the flow */ }
+  }
+
+  // ---- Entry ticket modal (quick win #1) --------------------------------------
+  let lastTicketCode = "";
+  function showEntryTicket(data) {
+    lastTicketCode = data.ticket_code || "";
+    if (!lastTicketCode) return;
+    document.getElementById("ticket-qr").src = data.ticket_qr;
+    document.getElementById("ticket-code").textContent = lastTicketCode;
+    document.getElementById("ticket-modal").hidden = false;
+  }
+  document.getElementById("ticket-close").addEventListener("click", () => {
+    document.getElementById("ticket-modal").hidden = true;
+  });
+  document.getElementById("ticket-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(lastTicketCode);
+      toast("Ticket code copied.", "success");
+    } catch (err) {
+      toast("Copy failed — select the code manually.", "error");
+    }
+  });
+
+  // ---- Exit: ticket code -> plate ---------------------------------------------
+  document.getElementById("use-ticket").addEventListener("click", async () => {
+    const input = document.getElementById("ticket-code");
+    const code = input.value.trim();
+    if (!code) { toast("Paste or scan a ticket code first.", "error"); return; }
+    try {
+      const res = await fetch(`/api/ticket/${encodeURIComponent(code)}`);
+      const data = await res.json();
+      if (!data.ok) { toast(data.error, "error"); playChime("error"); return; }
+      const exitPlate = document.querySelector("#exit-form input[name=plate_number]");
+      exitPlate.value = data.plate_number;
+      toast(`Ticket OK — ${data.plate_number} in slot ${data.slot_number}.`, "success");
+      playChime("success");
+    } catch (err) {
+      toast("Could not resolve that ticket.", "error");
+      playChime("error");
+    }
+  });
+
   // ---- Entry form ------------------------------------------------------------
   const entryForm = document.getElementById("entry-form");
   entryForm.addEventListener("submit", async (e) => {
@@ -497,10 +658,13 @@
       const data = await res.json();
       if (!data.ok) {
         toast(data.error, "error");
+        playChime("error");
         return;
       }
       toast(`${data.session.vehicle} checked in — slot ${data.session.slot_number}.`, "success");
+      playChime("success");
       playBarrierSequence(`Entering — slot ${data.session.slot_number}`);
+      showEntryTicket(data);
       form.reset();
       refreshSlots();
       refreshActivity();
@@ -526,11 +690,13 @@
       const data = await res.json();
       if (!data.ok) {
         toast(data.error, "error");
+        playChime("error");
         return;
       }
       const s = data.session;
       if (!data.payment_required) {
         toast(`Free exit (${s.duration_minutes} min) — safe travels!`, "success");
+        playChime("success");
         playBarrierSequence("Exiting — safe travels");
         form.reset();
         refreshSlots();

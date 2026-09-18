@@ -32,34 +32,69 @@ University of Kenya.
 
 - **Payment & barrier control** — the barrier only opens once payment is
   confirmed (or immediately, for the free tier).
+- **Entry ticket QR** — every check-in issues an HMAC-signed ticket code plus
+  a QR image. At the exit panel, paste or scan the code to auto-fill the plate.
+- **Attendant overrides** — managers can take a bay out of service (e.g. jammed
+  lock) or replay the barrier open signal for an already-paid session. Every
+  override is written to the `override_events` audit trail with who/when/why.
+  Unpaid vehicles can never bypass the barrier.
+- **Overstay alerts** — active sessions past `OVERSTAY_HOURS` (default 8) are
+  flagged in the activity feed.
+- **Analytics** — revenue by day and by hour, revenue per payment method,
+  occupancy/utilization per zone, busiest zone, average stay per zone.
+- **Sound cues** — soft chimes on successful entry/exit, distinct tone on errors.
 - **Recent activity feed** for the attendant.
 - **Management rate editor** — authorized staff can update time limits and
   fees from the dashboard; changes apply to the next checkout.
 - **Audit and reporting** — every paid session has a receipt number, payment
   method, electronic signature, QR verification, and Excel/PDF/Word exports.
 
+## Algorithms (DSA design → code)
+
+| Module | Data structure / algorithm | Where |
+|--------|---------------------------|-------|
+| Slot allocation | Binary min-heap keyed by walking distance (Dijkstra over the bay grid), tie-break lowest bay | `algorithms.allocate_slot`, `_grid_distance_map` |
+| Slot release | Heap push back, O(log n) | `algorithms.release_slot` |
+| Vehicle entry | Hash-indexed plate lookup + visit counter | `algorithms.register_entry` |
+| Duration & billing | Tiered rate table with VAT rounding | `algorithms.calculate_fee`, `calculate_totals` |
+| Barrier control | **Single-lane FIFO queue** with one worker, serialized open pulses | `algorithms.BarrierQueue` |
+| Plate lookup | **Trie** prefix search | `algorithms.PlateTrie`, `search_plates` |
+| Overstay detection | Time-window scan over active sessions | `algorithms.count_overstays` |
+| Analytics | Hash-map aggregation over payments/sessions | `algorithms.analytics_summary` |
+
+`algorithms.py` keeps the pseudocode for each module in its docstrings; the
+test suite in `tests/test_features.py` asserts the tier boundaries, FIFO
+service order, nearest-bay ordering, trie results, ticket signing, override
+rules, overstay flags, and analytics output.
+
 ## Tech stack
 
-- **Backend:** Python 3 + Flask
-- **Database:** SQLite (via the standard-library `sqlite3` module — no
-  extra DB dependency to install)
+- **Backend:** Python 3 + Flask (gunicorn in production)
+- **Database:** PostgreSQL in production (`DATABASE_URL`), SQLite for local
+  development and tests
 - **Frontend:** hand-written HTML/CSS/JS (no build step), polling a small
   JSON REST API
+- **Tests:** `unittest` suites in `tests/`, run on every push by GitHub Actions
 
 ## Project structure
 
 ```
 smartpark/
-├── app.py              # Flask routes / REST API
-├── algorithms.py        # All core algorithms (see design doc), heavily commented
-├── db.py                 # SQLite schema, connection, seeding
+├── app.py               # Flask routes / REST API
+├── algorithms.py         # Core algorithms + data structures, heavily commented
+├── db.py                  # Schema (SQLite + PostgreSQL), connection, seeding
+├── wsgi.py                # Production entrypoint (gunicorn wsgi:app)
+├── Dockerfile             # Container image (gunicorn on $PORT)
+├── render.yaml            # Render Blueprint: web + Postgres + disk
 ├── requirements.txt
-├── templates/
-│   └── index.html        # Single-page UI
+├── .github/workflows/     # ci.yml, docker.yml, render-deploy.yml
+├── templates/index.html   # Single-page UI
 ├── static/
 │   ├── css/style.css
 │   └── js/app.js
-└── smartpark.db          # created automatically on first run (git-ignored)
+├── scripts/backup_database.py
+├── tests/                 # test_regression.py, test_features.py
+└── smartpark.db           # local SQLite fallback (git-ignored)
 ```
 
 ## Running it

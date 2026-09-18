@@ -18,6 +18,7 @@ built-in sqlite3 module, so there is nothing else to install.
 import os
 import uuid
 import hashlib
+import hmac
 import base64
 import secrets
 import logging
@@ -130,6 +131,64 @@ def payhero_headers():
         "Content-Type": "application/json",
     }
 
+
+# ---------------------------------------------------------------------------
+# Entry ticket helpers: HMAC-signed QR ticket (quick win #1)
+# ---------------------------------------------------------------------------
+TICKET_PREFIX = "SP-TK"
+
+
+def _ticket_secret():
+    # Stable per deployment; FLASK_SECRET_KEY is mandatory in production.
+    return (os.environ.get("FLASK_SECRET_KEY") or "smartpark-local-fallback-key").encode()
+
+
+def make_ticket_code(session):
+    payload = f"{session['id']}.{session['vehicle']}"
+    raw = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+    sig = hmac.new(_ticket_secret(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{TICKET_PREFIX}-{raw}-{sig}"
+
+
+def resolve_ticket_code(code):
+    """Verify a signed ticket code and return its session, or (None, error)."""
+    code = (code or "").strip()
+    if not code.upper().startswith(f"{TICKET_PREFIX}-"):
+        return None, "Not a valid SmartPark ticket code."
+    try:
+        head, sig = code.rsplit("-", 1)
+        if not head.upper().startswith(f"{TICKET_PREFIX}-"):
+            return None, "Not a valid SmartPark ticket code."
+        encoded = head[len(TICKET_PREFIX) + 1:]
+        padded = encoded + "=" * (-len(encoded) % 4)
+        payload = base64.urlsafe_b64decode(padded.encode()).decode()
+        session_id, plate = payload.split(".", 1)
+    except (ValueError, TypeError):
+        return None, "Ticket code is malformed."
+    expected = hmac.new(_ticket_secret(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    if not secrets.compare_digest(sig, expected):
+        return None, "Ticket signature check failed."
+    conn = get_connection()
+    session = conn.execute(
+        "SELECT ps.*, v.plate_number AS vehicle, sl.slot_number "
+        "FROM parking_sessions ps "
+        "JOIN vehicles v ON v.id = ps.vehicle_id "
+        "JOIN parking_slots sl ON sl.id = ps.slot_id WHERE ps.id = ?",
+        (int(session_id),),
+    ).fetchone()
+    conn.close()
+    if session is None or session["vehicle"] != plate:
+        return None, "Ticket does not match any active vehicle."
+    if session["status"] not in ("active", "awaiting_payment"):
+        return None, "This ticket has already been used for a completed exit."
+    return dict(session), None
+
+
+def ticket_qr_data_uri(code):
+    image = qrcode.make(code)
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
 
 def payhero_url(path):
     base = os.environ.get("PAYHERO_API_BASE_URL", "https://backend.payhero.co.ke/api/v2").rstrip("/")
@@ -636,11 +695,32 @@ def api_entry():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
+    ticket_code = make_ticket_code(session)
+    barrier = algorithms.barrier_queue.request(
+        {"id": session["id"], "status": "completed", "slot_number": session["slot_number"]}
+    )
     return jsonify({
         "ok": True,
         "message": f"Welcome {session['vehicle']}! Proceed to slot {session['slot_number']}.",
         "session": session,
+        "ticket_code": ticket_code,
+        "ticket_qr": ticket_qr_data_uri(ticket_code),
         "barrier": {"opened": True, "slot": session["slot_number"]},
+    })
+
+
+@app.route("/api/ticket/<code>")
+def api_ticket_resolve(code):
+    """Scan/paste a signed entry ticket -> plate + slot for the exit panel."""
+    session, error = resolve_ticket_code(code)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+    return jsonify({
+        "ok": True,
+        "session_id": session["id"],
+        "plate_number": session["vehicle"],
+        "slot_number": session["slot_number"],
+        "entry_time": session["entry_time"],
     })
 
 
@@ -657,8 +737,9 @@ def api_exit():
         return jsonify({"ok": False, "error": error}), 400
 
     if session["status"] == "completed":
-        # Free tier (<=30 min) — no payment required, barrier opens right away.
-        barrier = algorithms.open_barrier(session)
+        # Free tier (<=30 min) — no payment required, barrier opens right away
+        # through the FIFO barrier queue (serialized with all other lanes).
+        barrier = algorithms.barrier_queue.request(session)
         return jsonify({
             "ok": True, "payment_required": False,
             "session": session, "barrier": barrier,
@@ -756,7 +837,7 @@ def api_pay():
     session, error = algorithms.settle_payment(session_id, method, reference)
     if error:
         return jsonify({"ok": False, "error": error}), 400
-    return jsonify({"ok": True, "session": session, "barrier": algorithms.open_barrier(session),
+    return jsonify({"ok": True, "session": session, "barrier": algorithms.barrier_queue.request(session),
                     "payment": {"status": "success"}, "receipt": get_receipt(session_id)})
 
 
@@ -773,7 +854,7 @@ def api_paypal_capture(session_id):
     if error:
         return jsonify({"ok": False, "error": error}), 400
     return jsonify({"ok": True, "status": "success", "session": session,
-                    "barrier": algorithms.open_barrier(session), "paypal": body,
+                    "barrier": algorithms.barrier_queue.request(session), "paypal": body,
                     "receipt": get_receipt(session_id)})
 
 
@@ -797,7 +878,7 @@ def api_payment_status(session_id):
         if error:
             return jsonify({"ok": False, "error": error}), 400
         return jsonify({"ok": True, "status": "success", "session": session,
-                "barrier": algorithms.open_barrier(session), "receipt": get_receipt(session_id)})
+                "barrier": algorithms.barrier_queue.request(session), "receipt": get_receipt(session_id)})
     if status in ("failed", "cancelled"):
         update_payment_status(session_id, "failed", body.get("reference"), body.get("provider_reference"))
         return jsonify({"ok": True, "status": "failed", "message": "Payment was not completed."})
@@ -921,7 +1002,85 @@ def export_report():
 # ---------------------------------------------------------------------------
 @app.route("/api/activity")
 def api_activity():
-    return jsonify({"sessions": algorithms.list_recent_activity(limit=1000)})
+    sessions = algorithms.list_recent_activity(limit=1000)
+    return jsonify({"sessions": sessions, "overstays": sum(1 for s in sessions if s.get("overstay"))})
+
+
+# ---------------------------------------------------------------------------
+# Attendant tools: plate prefix search (trie), overrides, analytics
+# ---------------------------------------------------------------------------
+@app.route("/api/plates")
+@require_role()
+def api_plate_search():
+    prefix = request.args.get("prefix", "")
+    if len(prefix) < 1:
+        return jsonify({"ok": False, "error": "Provide a plate prefix."}), 400
+    matches = algorithms.search_plates(prefix, limit=10)
+    conn = get_connection()
+    live = {}
+    if matches:
+        placeholders = ",".join("?" for _ in matches)
+        rows = conn.execute(
+            "SELECT v.plate_number, sl.slot_number, ps.status FROM vehicles v "
+            "LEFT JOIN parking_sessions ps ON ps.vehicle_id = v.id AND ps.status = 'active' "
+            "LEFT JOIN parking_slots sl ON sl.id = ps.slot_id "
+            f"WHERE v.plate_number IN ({placeholders})",
+            matches,
+        ).fetchall()
+        for row in rows:
+            live[row["plate_number"]] = {"slot_number": row["slot_number"], "status": row["status"]}
+    conn.close()
+    return jsonify({"ok": True, "matches": [
+        {"plate_number": plate, **(live.get(plate) or {"slot_number": None, "status": None})}
+        for plate in matches
+    ]})
+
+
+@app.route("/api/slots/<int:slot_number>/maintenance", methods=["POST"])
+@require_role("manager")
+def api_slot_maintenance(slot_number):
+    data = request.get_json(force=True) or {}
+    out_of_service = bool(data.get("out_of_service"))
+    reason = str(data.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"ok": False, "error": "A reason is required for the audit trail."}), 400
+    ok, error = algorithms.set_slot_maintenance(
+        slot_number, out_of_service, reason, user_session.get("username") or "unknown"
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": error}), 400
+    return jsonify({"ok": True, "slot_number": slot_number,
+                    "out_of_service": out_of_service, "status": "maintenance" if out_of_service else "available"})
+
+
+@app.route("/api/barrier/override", methods=["POST"])
+@require_role("manager")
+def api_barrier_override():
+    data = request.get_json(force=True) or {}
+    try:
+        session_id = int(data.get("session_id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "session_id is required."}), 400
+    reason = str(data.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"ok": False, "error": "A reason is required for the audit trail."}), 400
+    result, error = algorithms.record_barrier_override(
+        session_id, reason, user_session.get("username") or "unknown"
+    )
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+    return jsonify({"ok": True, "barrier": result})
+
+
+@app.route("/api/analytics")
+@require_role("manager")
+def api_analytics():
+    try:
+        days = max(1, min(60, int(request.args.get("days", 14))))
+    except ValueError:
+        days = 14
+    return jsonify({"ok": True, "analytics": algorithms.analytics_summary(days=days),
+                    "overstays": algorithms.count_overstays()})
 
 
 if __name__ == "__main__":
