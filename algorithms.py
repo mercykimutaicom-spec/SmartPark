@@ -1,7 +1,7 @@
 """
 algorithms.py
 =============
-SmartPark KE — Core algorithms for every module identified in the terms
+ParkFlow — Core algorithms for every module identified in the terms
 of reference. Each function corresponds 1:1 to a module named in the
 design document (Task 1); the pseudocode for each is reproduced in the
 docstring above the function, so this file is the living, tested
@@ -34,6 +34,7 @@ Why a min-heap instead of scanning the parking_slots table for
     accelerator sitting in front of it, safe to discard and rebuild.
 """
 import heapq
+import logging
 import secrets
 import threading
 import collections
@@ -41,6 +42,12 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from db import DATABASE_URL, get_connection
+
+logger = logging.getLogger("parkflow")
+
+# Shown to the driver when not a single bay is left. One message, one meaning:
+# the lot is full and no vehicle may enter until a bay is released.
+PARKING_FULL_MESSAGE = "Parking is currently full, please try again later."
 
 # In-memory min-heap of free slots per vehicle_type, keyed
 # (walking_distance_from_entrance, slot_number): pops the NEAREST bay first.
@@ -209,44 +216,70 @@ def load_heaps_from_db():
         _PLATE_TRIE.insert(row["plate_number"])
 
 
+def count_available_slots(vehicle_type=None):
+    """Free bays counted straight from the database, which is the source of truth.
+
+    The in-memory heap is only a cache in front of the table, so every hard
+    capacity decision is made against this count and never against the heap.
+    Pass ``vehicle_type`` to count only that class of bay.
+    """
+    conn = get_connection()
+    try:
+        if vehicle_type:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM parking_slots "
+                "WHERE status = 'available' AND vehicle_type = ?",
+                (vehicle_type,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM parking_slots WHERE status = 'available'"
+            ).fetchone()
+        return int(row["n"])
+    finally:
+        conn.close()
+
+
 def allocate_slot(conn, vehicle_type="car"):
     """
     MODULE 1: Slot Allocation Algorithm (nearest-bay, Dijkstra-ordered)
     --------------------------------------------------------------------
     PSEUDOCODE:
-        1. If no free-slot heap entry exists for this vehicle_type -> return None
-        2. Pop the (distance, slot_number) pair with the SMALLEST walking
+        1. Pop the (distance, slot_number) pair with the SMALLEST walking
            distance from the entrance (O(log n)); ties go to the lower
            slot_number — drivers walk less, occupancy clusters near the gate.
-        3. Look up the matching parking_slots row
-        4. Mark it 'occupied'
-        5. Return the slot row
+        2. CLAIM the bay with a conditional update that only fires while the
+           bay is still 'available'. Two arrivals that read the same bay
+           therefore cannot both win: the loser simply takes the next bay.
+        3. When the heap runs dry, rebuild it from the database once (it is a
+           cache) and try again; return None only when the lot is really full.
 
-    Returns the allocated slot row (sqlite3.Row), or None if the lot is full.
+    Returns the allocated slot row, or None if no bay is free.
     Caller is responsible for commit().
     """
-    heap = _free_slot_heaps.get(vehicle_type, [])
-    if not heap:
-        return None  # Lot full for this vehicle type
-
-    def _pop():
-        _, slot_number = heapq.heappop(heap)
-        return conn.execute(
-            "SELECT * FROM parking_slots WHERE slot_number = ? AND vehicle_type = ?",
-            (slot_number, vehicle_type),
-        ).fetchone()
-
-    slot = _pop()
-    if slot is None or slot["status"] != "available":
-        # Heap/DB drifted out of sync (shouldn't happen) — resync and retry once.
+    resynced = False
+    while True:
+        heap = _free_slot_heaps.setdefault(vehicle_type, [])
+        while heap:
+            _, slot_number = heapq.heappop(heap)
+            slot = conn.execute(
+                "SELECT * FROM parking_slots WHERE slot_number = ? AND vehicle_type = ?",
+                (slot_number, vehicle_type),
+            ).fetchone()
+            if slot is None or slot["status"] != "available":
+                continue  # stale heap entry for a bay somebody else took
+            claimed = conn.execute(
+                "UPDATE parking_slots SET status = 'occupied' "
+                "WHERE id = ? AND status = 'available'",
+                (slot["id"],),
+            )
+            if claimed.rowcount == 1:
+                return slot
+            # Lost the race for this bay; the next candidate is still in the heap.
+        if resynced:
+            return None  # cache rebuilt and still empty: the lot is full
         load_heaps_from_db()
-        heap = _free_slot_heaps.get(vehicle_type, [])
-        if not heap:
-            return None
-        slot = _pop()
-
-    conn.execute("UPDATE parking_slots SET status = 'occupied' WHERE id = ?", (slot["id"],))
-    return slot
+        resynced = True
 
 
 def release_slot(conn, slot_id, vehicle_type, slot_number):
@@ -269,17 +302,20 @@ def register_entry(plate_number, vehicle_type="car", owner_phone=None):
     -----------------------------------
     PSEUDOCODE:
         1. Normalise plate_number (uppercase, strip spaces)
-        2. HASH LOOKUP: does a vehicle with this plate already exist?
+        2. HARD CAPACITY GUARD: count free bays in the database. If the lot
+           has zero, refuse the entry BEFORE touching any table, so a full
+           lot never leaves half-written vehicle/session rows behind.
+        3. HASH LOOKUP: does a vehicle with this plate already exist?
               -> SQLite's UNIQUE index on plate_number gives O(1)-ish
                  average lookup instead of scanning every vehicle ever seen.
               - if yes: reuse the record, increment visit_count
               - if no:  insert a new vehicle record
-        3. Guard: does this vehicle already have an ACTIVE session?
+        4. Guard: does this vehicle already have an ACTIVE session?
               -> reject (no double entry / already parked)
-        4. Call Slot Allocation Algorithm for vehicle_type
-              - if no slot available -> reject entry, return error
-        5. Insert a new parking_sessions row: entry_time = now(), status='active'
-        6. Commit and return the session (drives the barrier + display)
+        5. Call Slot Allocation Algorithm for vehicle_type
+              - if no bay could be claimed -> rollback and refuse the entry
+        6. Insert a new parking_sessions row: entry_time = now(), status='active'
+        7. Commit and return the session (drives the barrier + display)
 
     Returns (session_dict, error_message). error_message is None on success.
     """
@@ -291,6 +327,12 @@ def register_entry(plate_number, vehicle_type="car", owner_phone=None):
         return None, "Phone number is required for payment."
     if vehicle_type not in ("car", "motorcycle", "van"):
         vehicle_type = "car"
+
+    # A full lot is a closed door: refuse before any write so nothing is
+    # half-recorded, and log the refused class of vehicle for the attendant.
+    if count_available_slots() == 0:
+        logger.warning("entry_refused reason=parking_full vehicle_type=%s", vehicle_type)
+        return None, PARKING_FULL_MESSAGE
 
     conn = get_connection()
     try:
@@ -327,8 +369,10 @@ def register_entry(plate_number, vehicle_type="car", owner_phone=None):
 
         slot = allocate_slot(conn, vehicle_type)
         if slot is None:
+            # Every bay was taken between the guard above and this claim.
             conn.rollback()
-            return None, f"Parking full for vehicle type '{vehicle_type}'."
+            logger.warning("entry_refused reason=no_bay_claimed vehicle_type=%s", vehicle_type)
+            return None, PARKING_FULL_MESSAGE
 
         entry_time = _now().isoformat()
         if DATABASE_URL:
@@ -675,155 +719,3 @@ def count_overstays():
     conn.close()
     now = _now()
     return sum(1 for row in rows if (now - _parse(row["entry_time"])).total_seconds() >= threshold * 3600)
-
-
-def set_slot_maintenance(slot_number, out_of_service, reason, username):
-    """MODULE 1 (companion): attendant override — mark a bay out of service.
-
-    Only AVAILABLE bays can go out of service (an occupied bay has a car in
-    it). Returns (ok, error_message); every toggle is written to the
-    override_events audit table with who/when/why.
-    """
-    conn = get_connection()
-    try:
-        slot = conn.execute(
-            "SELECT id, status FROM parking_slots WHERE slot_number = ?", (slot_number,)
-        ).fetchone()
-        if slot is None:
-            return False, "Slot not found."
-        new_status = "maintenance" if out_of_service else "available"
-        if slot["status"] == "occupied":
-            return False, "Slot is occupied — it cannot be taken out of service."
-        if slot["status"] == new_status:
-            return False, "Slot is already in that state."
-        conn.execute(
-            "UPDATE parking_slots SET status = ? WHERE id = ?", (new_status, slot["id"])
-        )
-        conn.execute(
-            "INSERT INTO override_events (created_at, username, action, target, reason) "
-            "VALUES (?, ?, 'slot_maintenance', ?, ?)",
-            (_now().isoformat(), username, f"slot:{slot_number}", reason),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    load_heaps_from_db()  # heap cache must reflect the new bay state
-    return True, None
-
-
-def record_barrier_override(session_id, reason, username):
-    """MODULE 6 (companion): audited manual barrier replay for completed sessions.
-
-    NEVER bypasses payment: only sessions already 'completed' (paid or free)
-    can be force-opened (e.g. the lift animation missed / sensor jammed).
-    Returns (result_dict, error_message).
-    """
-    conn = get_connection()
-    try:
-        session = conn.execute(
-            "SELECT ps.*, sl.slot_number FROM parking_sessions ps "
-            "JOIN parking_slots sl ON sl.id = ps.slot_id WHERE ps.id = ?",
-            (session_id,),
-        ).fetchone()
-        if session is None:
-            return None, "Session not found."
-        if session["status"] != "completed":
-            return None, (
-                "Barrier override is only available for completed sessions. "
-                "Settle payment (cash/STK) instead — unpaid vehicles must never bypass the barrier."
-            )
-        conn.execute(
-            "INSERT INTO override_events (created_at, username, action, target, reason) "
-            "VALUES (?, ?, 'barrier_override', ?, ?)",
-            (_now().isoformat(), username, f"session:{session_id}", reason),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    result = barrier_queue.request(dict(session), timeout=3.0)
-    return result, None
-
-
-def record_override_event(username, action, target, reason):
-    """Append an entry to the override audit trail."""
-    conn = get_connection()
-    try:
-        conn.execute(
-            "INSERT INTO override_events (created_at, username, action, target, reason) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (_now().isoformat(), username, action, target, reason),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def analytics_summary(days=14):
-    """MODULE 8: Analytics — revenue by day/hour, occupancy, busiest zone.
-
-    All aggregates read existing payments/parking_sessions data; nothing is
-    fabricated. Revenue counts only successful payments.
-    """
-    from collections import Counter, defaultdict
-    conn = get_connection()
-    payments = conn.execute(
-        "SELECT p.paid_at, p.amount, p.method FROM payments p "
-        "WHERE p.status = 'success' ORDER BY p.paid_at DESC LIMIT 20000"
-    ).fetchall()
-    sessions = conn.execute(
-        "SELECT sl.zone, ps.duration_minutes FROM parking_sessions ps "
-        "JOIN parking_slots sl ON sl.id = ps.slot_id ORDER BY ps.id DESC LIMIT 20000"
-    ).fetchall()
-    zones_now = conn.execute(
-        "SELECT zone, status, COUNT(*) AS n FROM parking_slots GROUP BY zone, status"
-    ).fetchall()
-    conn.close()
-
-    now = _now()
-    cutoff = datetime.fromtimestamp(now.timestamp() - days * 86400, timezone.utc).replace(microsecond=0)
-
-    revenue_by_day = defaultdict(int)
-    method_totals = Counter()
-    total_revenue = 0
-    revenue_by_hour = defaultdict(int)
-    for row in payments:
-        paid = _parse(row["paid_at"])
-        if paid >= cutoff:
-            revenue_by_day[paid.date().isoformat()] += row["amount"]
-            method_totals[row["method"]] += row["amount"]
-            total_revenue += row["amount"]
-        if paid.date() == now.date():
-            revenue_by_hour[paid.hour] += row["amount"]
-
-    sessions_by_zone = Counter()
-    duration_by_zone = defaultdict(list)
-    for row in sessions:
-        sessions_by_zone[row["zone"]] += 1
-        if row["duration_minutes"] is not None:
-            duration_by_zone[row["zone"]].append(row["duration_minutes"])
-
-    occupancy = defaultdict(lambda: {"available": 0, "occupied": 0, "maintenance": 0})
-    for row in zones_now:
-        bucket = occupancy[row["zone"]]
-        bucket[row["status"]] = bucket.get(row["status"], 0) + row["n"]
-
-    busiest = sessions_by_zone.most_common(1)
-    return {
-        "generated_at": now.isoformat(),
-        "window_days": days,
-        "total_revenue": total_revenue,
-        "revenue_by_day": [{"date": d, "amount": a} for d, a in sorted(revenue_by_day.items())],
-        "revenue_by_hour_today": [{"hour": h, "amount": a} for h, a in sorted(revenue_by_hour.items())],
-        "revenue_by_method": [{"method": m, "amount": a} for m, a in method_totals.most_common()],
-        "occupancy_by_zone": [
-            {"zone": z, **counts,
-             "utilization": round(counts.get("occupied", 0) /
-                                  max(1, counts.get("occupied", 0) + counts.get("available", 0)), 3)}
-            for z, counts in sorted(occupancy.items())
-        ],
-        "busiest_zone": {"zone": busiest[0][0], "sessions": busiest[0][1]} if busiest else None,
-        "avg_duration_by_zone": [
-            {"zone": z, "avg_minutes": round(sum(v) / len(v), 1)}
-            for z, v in sorted(duration_by_zone.items()) if v
-        ],
-    }

@@ -7,7 +7,7 @@ from pathlib import Path
 import db
 
 
-class SmartParkRegressionTests(unittest.TestCase):
+class ParkFlowRegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
@@ -47,10 +47,29 @@ class SmartParkRegressionTests(unittest.TestCase):
         self.assertEqual(exited["total_amount"], 58)
         self.assertEqual(exited["status"], "awaiting_payment")
 
-    def test_rate_export_requires_sign_in(self):
+    def test_report_export_is_open(self):
+        # No sign-in any more: the attendant kiosk exports straight away.
+        response = self.app.test_client().get("/api/reports/export?format=xlsx")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data[:2] == b"PK")
+
+    def test_rates_are_editable_without_sign_in(self):
         client = self.app.test_client()
-        response = client.get("/api/reports/export?format=xlsx")
-        self.assertEqual(response.status_code, 401)
+        response = client.put("/api/rates", json={"rates": [
+            {"max_minutes": 30, "fee_amount": 0},
+            {"max_minutes": 120, "fee_amount": 55},
+            {"max_minutes": 2147483647, "fee_amount": 500},
+        ], "vat_rate": 16})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertEqual(next(r["fee_amount"] for r in response.json["rates"] if r["max_minutes"] == 120), 55)
+        # Put the schedule back so later billing tests see the real tiers.
+        client.put("/api/rates", json={"rates": [
+            {"max_minutes": 30, "fee_amount": 0},
+            {"max_minutes": 120, "fee_amount": 50},
+            {"max_minutes": 240, "fee_amount": 100},
+            {"max_minutes": 360, "fee_amount": 300},
+            {"max_minutes": 2147483647, "fee_amount": 500},
+        ], "vat_rate": 16})
 
     def test_rate_schedule_is_persisted(self):
         conn = db.get_connection()
@@ -69,46 +88,26 @@ class SmartParkRegressionTests(unittest.TestCase):
         self.assertEqual(ready.status_code, 200)
         self.assertEqual(ready.json["checks"]["database"], "ok")
 
-    def test_manager_login_and_profile(self):
+    def test_authentication_is_fully_removed(self):
+        # Sign-in, profile viewing and sign-out are gone: every endpoint 404s
+        # and the app serves everything to an anonymous client.
         client = self.app.test_client()
-        login = client.post("/api/auth/login", json={"username": "manager", "password": "manager123"})
-        self.assertEqual(login.status_code, 200)
-        profile = client.get("/api/profile")
-        self.assertEqual(profile.status_code, 200)
-        self.assertTrue(profile.json["sessions"])
-
-    def test_revoke_other_session_and_relogin(self):
-        client = self.app.test_client()
-        login = client.post("/api/auth/login", json={"username": "manager", "password": "manager123"})
-        self.assertEqual(login.status_code, 200)
-        profile = client.get("/api/profile")
-        sessions = profile.json["sessions"]
-        self.assertTrue(sessions)
-        # Only one session is current, and it cannot be revoked.
-        current = [s for s in sessions if s.get("current")]
-        self.assertEqual(len(current), 1)
-        deny = client.delete(f"/api/profile/sessions/{current[0]['id']}")
-        self.assertEqual(deny.status_code, 400)
-        self.assertFalse(deny.json["ok"])
-        # A second login is revocable.
-        other = self.app.test_client()
-        self.assertEqual(other.post("/api/auth/login", json={"username": "manager", "password": "manager123"}).status_code, 200)
-        other_profile = other.get("/api/profile")
-        other_current = [s for s in other_profile.json["sessions"] if s.get("current")]
-        self.assertEqual(len(other_current), 1)
-        ok = client.delete(f"/api/profile/sessions/{other_current[0]['id']}")
-        self.assertEqual(ok.status_code, 200)
-        self.assertTrue(ok.json["ok"])
-        # The revoked session can no longer authenticate.
-        self.assertEqual(other.get("/api/profile").status_code, 401)
-
-    def test_mfa_endpoints_removed(self):
-        # MFA is gone: endpoints answer 410 and login never asks for a code.
-        client = self.app.test_client()
-        self.assertEqual(client.post("/api/auth/login", json={"username": "manager", "password": "manager123"}).status_code, 200)
-        for path in ("/api/profile/mfa/setup", "/api/profile/mfa/enable", "/api/profile/mfa/disable"):
-            response = client.post(path, json={})
-            self.assertEqual(response.status_code, 410)
+        for method, path in (
+            ("post", "/api/auth/login"), ("post", "/api/auth/logout"), ("get", "/api/auth/me"),
+            ("get", "/api/profile"), ("put", "/api/profile"),
+            ("delete", "/api/profile/sessions/1"),
+        ):
+            self.assertEqual(getattr(client, method)(path, json={}).status_code, 404, path)
+        self.assertEqual(client.get("/").status_code, 200)
+        # The legacy user tables are retained (not dropped) for audit history.
+        conn = db.get_connection()
+        try:
+            tables = {row["name"] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+        finally:
+            conn.close()
+        self.assertTrue({"users", "active_sessions"} <= tables, "auth tables must not be dropped")
 
 
 if __name__ == "__main__":

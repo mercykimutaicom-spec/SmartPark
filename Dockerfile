@@ -1,4 +1,4 @@
-# SmartPark KE production image
+# ParkFlow production image
 FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -20,7 +20,7 @@ COPY scripts/ ./scripts/
 # SQLite fallback (ephemeral unless a volume is mounted); Postgres is picked
 # automatically when DATABASE_URL is set.
 VOLUME ["/app/data"]
-ENV SQLITE_DB_PATH=/app/data/smartpark.db
+ENV SQLITE_DB_PATH=/app/data/parkflow.db
 
 EXPOSE 5000
 

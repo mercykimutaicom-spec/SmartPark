@@ -1,4 +1,4 @@
-/* SmartPark KE — design tokens.
+/* ParkFlow — design tokens.
    Glass panels echo the acrylic screen on a real kiosk. Amber = barrier/accent;
    teal-green and coral mean free/occupied ONLY. */
 :root{
@@ -29,6 +29,16 @@
 }
 
 *{ box-sizing: border-box; }
+
+/* The `hidden` attribute must always win. An author rule such as
+   `.lot-full{ display:grid }` beats the user-agent `[hidden]{display:none}`,
+   so anything JS toggles with `el.hidden` stays on screen regardless. That
+   made the entry panel read "Parking is currently full" while the Slots page
+   showed free bays, so drivers concluded check-in was broken.
+   `!important` keeps the attribute authoritative for every component. */
+[hidden]{ display: none !important; }
+
+html{ scroll-behavior: smooth; }
 html,body{ margin:0; padding:0; }
 
 body{
@@ -122,8 +132,6 @@ h1,h2,h3{ font-family: var(--font-display); margin: 0; }
   border: 1px solid var(--edge); border-radius: var(--radius-s);
   padding: 6px 12px; background: var(--panel);
 }
-.topbar__auth{ border:1px solid var(--edge); border-radius:var(--radius-s); padding:6px 10px; background:var(--panel); color:var(--text-dim); font:inherit; font-size:0.76rem; cursor:pointer; }
-.topbar__auth:hover{ border-color:var(--amber); color:var(--text); }
 
 /* Shell / layout */
 .shell{ position: relative; z-index: 1; max-width: 1120px; margin: 0 auto; padding: 32px 24px 64px; display:flex; flex-direction:column; gap: 40px; }
@@ -395,10 +403,7 @@ main section[id]{ scroll-margin-top:92px; }
 }
 .payment-modal__card h2{ margin-bottom:8px; }
 .payment-modal__card p{ margin:0 0 22px; color:var(--text-dim); font-size:0.9rem; }
-.login-card{ display:flex; flex-direction:column; gap:12px; text-align:left; }
-.login-card h2, .login-card p{ text-align:center; }
-.login-card .payment-modal__icon{ align-self:center; }
-.login-card .field input{ width:100%; }
+/* Shared card shell for the ticket / receipt dialogs. */
 .profile-card{
   width:min(620px,100%); max-height:min(88vh,760px); overflow:auto; padding:28px;
   background:#131c28; border:1px solid var(--edge); border-radius:var(--radius-m);
@@ -406,19 +411,6 @@ main section[id]{ scroll-margin-top:92px; }
 }
 .profile-card__head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--edge); }
 .profile-card__head h2{ margin-top:4px; }
-.profile-section{ display:flex; flex-direction:column; gap:10px; padding:20px 0; border-bottom:1px solid var(--edge-soft); }
-.profile-section:last-child{ border-bottom:0; padding-bottom:0; }
-.profile-section h3{ font-size:1rem; }
-.profile-section__title{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.profile-section__title span, #mfa-status{ color:var(--text-faint); font-size:0.75rem; }
-
-.profile-section p{ margin:0; color:var(--text-dim); font-size:0.8rem; }
-.profile-section code{ padding:10px 12px; border:1px dashed var(--amber); border-radius:var(--radius-s); color:var(--amber); overflow-wrap:anywhere; }
-.profile-sessions{ display:flex; flex-direction:column; gap:7px; }
-.profile-session{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-top:1px solid var(--edge-soft); }
-.profile-session div{ display:flex; flex-direction:column; gap:3px; min-width:0; }
-.profile-session strong{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.78rem; }
-.profile-session span{ color:var(--text-faint); font-size:0.7rem; }
 
 .receipt-modal{
   position:fixed; inset:0; z-index:125; display:grid; place-items:center; padding:20px;
@@ -481,7 +473,6 @@ main section[id]{ scroll-margin-top:92px; }
   .topbar__sub{ display:none; }
   .topbar__inner{ padding:12px 16px; }
   .topbar__right{ margin-left:auto; gap:6px; }
-  .topbar__auth{ max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 }
 
 /* Accessibility */
@@ -491,20 +482,19 @@ main section[id]{ scroll-margin-top:92px; }
 }
 :focus-visible{ outline: 2px solid var(--amber); outline-offset: 2px; }
 
-/* Attendant tools / analytics / ticket */
+/* Attendant tools / ticket / capacity */
 .tools{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; margin:26px 0; }
-.tools__divider{ border:0; border-top:1px solid var(--line,#2C3B4E); margin:16px 0; }
 .plate-results{ margin-top:12px; display:grid; gap:8px; }
 .plate-results__row{ display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:10px; font-size:0.82rem; }
 .plate-results__row strong{ color:var(--amber); }
-.analytics{ margin:26px 0 8px; }
-.analytics__grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px; margin-top:14px; }
-.analytics__grid h3{ font-size:0.95rem; margin:0 0 12px; }
-.analytics__row{ display:grid; grid-template-columns:88px 1fr 90px; align-items:center; gap:10px; margin-bottom:8px; font-size:0.78rem; }
-.analytics__label{ color:var(--text-dim,#8fa1b8); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.analytics__bar{ height:8px; background:rgba(255,255,255,0.07); border-radius:99px; overflow:hidden; }
-.analytics__bar i{ display:block; height:100%; background:linear-gradient(90deg,var(--amber),#3ED9A0); border-radius:99px; }
-.analytics__value{ text-align:right; color:var(--text-faint,#8fa1b8); }
+/* Full-lot notice: the only place the driver is told to come back later. */
+.lot-full{
+  margin:0; padding:12px 14px; border-radius:var(--radius-m);
+  background:rgba(241,97,92,0.12); border:1px solid rgba(241,97,92,0.35);
+  color:var(--text); font-size:0.82rem; display:grid; gap:3px;
+}
+.lot-full strong{ color:var(--occupied); }
+.capacity-note{ margin:0; color:var(--text-faint); font-size:0.76rem; }
 .ticket{ display:grid; justify-items:center; gap:12px; }
 .ticket img{ width:200px; height:200px; image-rendering:pixelated; background:#fff; padding:8px; border-radius:12px; }
 .ticket__code{ max-width:100%; overflow-wrap:anywhere; font-size:0.72rem; color:var(--amber); }

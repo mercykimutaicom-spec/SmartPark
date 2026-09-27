@@ -1,4 +1,10 @@
-# SmartPark KE — Render Blueprint: always-on web service + Postgres + disk.
+# ParkFlow — Render Blueprint: always-on web service + Postgres + disk.
+#
+# The service, disk and database NAMES below still carry the pre-rebrand
+# "smartpark" name on purpose: Render treats them as resource identities, so
+# renaming them here would provision a brand-new empty service and database
+# and strand the live one. Rename them in the Render dashboard first, then
+# update this file: see DEPLOYMENT.md, section "ParkFlow rebrand checklist".
 # autoDeploy:false is INTENTIONAL: pushes only reach Render after CI and the
 # GHCR smoke test pass and the Deploy Hook is fired, keeping broken code offline.
 # The disk keeps /app/data (SQLite fallback + backups); Postgres is the source of
@@ -23,7 +29,7 @@ services:
           name: smartpark-db
           property: connectionString
       - key: SQLITE_DB_PATH
-        value: /app/data/smartpark.db
+        value: /app/data/parkflow.db
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: LOG_LEVEL
@@ -33,10 +39,6 @@ services:
       - key: OVERSTAY_HOURS
         value: "8"
       # --- Fill once in Render dashboard (sync:false = Blueprint never overwrites) ---
-      - key: ADMIN_USERNAME
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
       - key: PAYHERO_AUTH_TOKEN
         sync: false
       - key: PAYHERO_CHANNEL_ID
@@ -60,7 +62,7 @@ services:
       - key: PAYPAL_CANCEL_URL
         sync: false
       - key: BUSINESS_NAME
-        value: SmartPark KE
+        value: ParkFlow
       - key: BUSINESS_ADDRESS
         sync: false
       - key: KRA_PIN

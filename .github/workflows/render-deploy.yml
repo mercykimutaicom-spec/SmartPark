@@ -1,4 +1,4 @@
-# SmartPark KE: gated auto-deploy to Render.
+# ParkFlow: gated auto-deploy to Render.
 # Fires the Render Deploy Hook only after CI and Docker/GHCR (including the
 # image smoke test) succeeded on main, so broken code never reaches the lot.
 # Secrets: RENDER_DEPLOY_HOOK_URL, RENDER_APP_URL (see DEPLOYMENT.md).

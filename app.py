@@ -1,11 +1,16 @@
 """
 app.py
 ======
-SmartPark KE — Flask application entry point.
+ParkFlow — Flask application entry point.
 
 Wires together the database (db.py) and the core algorithms
 (algorithms.py) behind a small REST API, and serves the single-page
 web UI (templates/index.html) that drivers and the attendant use.
+
+Open kiosk model: there is no sign-in. Anyone who can reach the app can
+check vehicles in and out, edit rates and download audit reports, so it
+must only ever be exposed on a trusted network. See DEPLOYMENT.md ->
+"Open-access deployment".
 
 Run:
     pip install -r requirements.txt
@@ -23,8 +28,6 @@ import base64
 import secrets
 import logging
 import time
-from datetime import timedelta
-from functools import wraps
 from io import BytesIO
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -32,7 +35,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import requests
 import qrcode
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, request, render_template, send_file, url_for, session as user_session
+from flask import Flask, g, jsonify, redirect, request, render_template, send_file, url_for
 from docx import Document
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -41,7 +44,6 @@ from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import DATABASE_URL, get_connection, init_db
 import algorithms
@@ -50,7 +52,11 @@ app = Flask(__name__)
 load_dotenv()
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
-logger = logging.getLogger("smartpark")
+logger = logging.getLogger("parkflow")
+
+# Brand name shown on receipts, tickets and reports unless BUSINESS_NAME is set.
+BRAND_NAME = "ParkFlow"
+RECEIPT_PREFIX = "PF"
 
 
 @app.before_request
@@ -73,58 +79,6 @@ def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
-def require_role(*roles):
-    def decorator(view):
-        @wraps(view)
-        def wrapped(*args, **kwargs):
-            if not current_authenticated_user():
-                return jsonify({"ok": False, "error": "Sign in is required for this operation."}), 401
-            if roles and user_session.get("role") not in roles:
-                return jsonify({"ok": False, "error": "You do not have permission for this operation."}), 403
-            return view(*args, **kwargs)
-        return wrapped
-    return decorator
-
-
-def session_token_hash(token):
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def current_authenticated_user():
-    token = user_session.get("session_token")
-    user_id = user_session.get("user_id")
-    if not token or not user_id:
-        return None
-    conn = get_connection()
-    row = conn.execute(
-        "SELECT u.id, u.username, u.role, u.password_hash, u.mfa_secret, u.mfa_enabled "
-        "FROM active_sessions s JOIN users u ON u.id = s.user_id "
-        "WHERE s.token_hash = ? AND s.user_id = ? AND s.revoked = 0 AND s.expires_at > ? AND u.active = 1",
-        (session_token_hash(token), user_id, utc_now()),
-    ).fetchone()
-    if row:
-        conn.execute("UPDATE active_sessions SET last_seen = ? WHERE token_hash = ?", (utc_now(), session_token_hash(token)))
-        conn.commit()
-    conn.close()
-    return row
-
-
-def create_authenticated_session(user, request):
-    token = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc).replace(microsecond=0)
-    conn = get_connection()
-    conn.execute(
-        "INSERT INTO active_sessions (user_id, token_hash, created_at, last_seen, expires_at, user_agent, ip_address) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (user["id"], session_token_hash(token), now.isoformat(), now.isoformat(),
-         (now + timedelta(hours=12)).isoformat(), request.headers.get("User-Agent"), request.remote_addr),
-    )
-    conn.commit()
-    conn.close()
-    user_session.clear()
-    user_session.update({"user_id": user["id"], "username": user["username"], "role": user["role"], "session_token": token})
-
-
 def payhero_headers():
     return {
         "Authorization": os.environ.get("PAYHERO_AUTH_TOKEN", ""),
@@ -133,12 +87,24 @@ def payhero_headers():
 
 
 # Entry ticket: HMAC-signed code + QR that opens the vehicle-details page.
-TICKET_PREFIX = "SP-TK"
+# Tickets issued before the ParkFlow rebrand used the SP-TK prefix; they stay
+# resolvable so a vehicle already holding a paper ticket is never stranded.
+TICKET_PREFIX = "PF-TK"
+LEGACY_TICKET_PREFIXES = ("SP-TK",)
 
 
 def _ticket_secret():
     # Signing key: stable per deployment (FLASK_SECRET_KEY in production).
-    return (os.environ.get("FLASK_SECRET_KEY") or "smartpark-local-fallback-key").encode()
+    return (os.environ.get("FLASK_SECRET_KEY") or "parkflow-local-fallback-key").encode()
+
+
+def _split_ticket_prefix(code):
+    """Return (prefix, rest_of_code) for any supported prefix, else (None, None)."""
+    for prefix in (TICKET_PREFIX, *LEGACY_TICKET_PREFIXES):
+        marker = f"{prefix}-"
+        if code.upper().startswith(marker):
+            return prefix, code[len(marker):]
+    return None, None
 
 
 def public_base_url():
@@ -179,13 +145,14 @@ def resolve_ticket_code(code, require_active=True):
     driver can still open the vehicle details after paying.
     """
     code = (code or "").strip()
-    if not code.upper().startswith(f"{TICKET_PREFIX}-"):
-        return None, "Not a valid SmartPark ticket code."
+    prefix, _ = _split_ticket_prefix(code)
+    if prefix is None:
+        return None, "Not a valid ParkFlow ticket code."
     try:
         head, sig = code.rsplit("-", 1)
-        if not head.upper().startswith(f"{TICKET_PREFIX}-"):
-            return None, "Not a valid SmartPark ticket code."
-        encoded = head[len(TICKET_PREFIX) + 1:]
+        if not head.upper().startswith(f"{prefix}-"):
+            return None, "Not a valid ParkFlow ticket code."
+        encoded = head[len(prefix) + 1:]
         padded = encoded + "=" * (-len(encoded) % 4)
         payload = base64.urlsafe_b64decode(padded.encode()).decode()
         session_id, plate = payload.split(".", 1)
@@ -226,7 +193,7 @@ def payhero_configured():
 
 
 def initiate_payhero_stk(session, external_reference=None):
-    external_reference = external_reference or f"SMARTPARK-{session['id']}-{uuid.uuid4().hex[:10].upper()}"
+    external_reference = external_reference or f"PARKFLOW-{session['id']}-{uuid.uuid4().hex[:10].upper()}"
     payload = {
         "amount": session["fee_charged"],
         "phone_number": session["owner_phone"],
@@ -343,17 +310,17 @@ def create_paypal_order(session):
         raise RuntimeError("PayPal Checkout requires a supported currency; configure PAYPAL_CURRENCY and its conversion rate.")
     response = requests.post(
         f"{paypal_base_url()}/v2/checkout/orders",
-        headers={**paypal_headers(token), "PayPal-Request-Id": f"smartpark-{session['id']}-{uuid.uuid4().hex}"},
+        headers={**paypal_headers(token), "PayPal-Request-Id": f"parkflow-{session['id']}-{uuid.uuid4().hex}"},
         json={
             "intent": "CAPTURE",
             "purchase_units": [{
-                "reference_id": f"SMARTPARK-{session['id']}",
+                "reference_id": f"PARKFLOW-{session['id']}",
                 "custom_id": str(session["id"]),
-                "description": f"SmartPark parking fee - {session['vehicle']}",
+                "description": f"{BRAND_NAME} parking fee - {session['vehicle']}",
                 "amount": {"currency_code": currency, "value": paypal_amount(session["fee_charged"])},
             }],
             "application_context": {
-                "brand_name": "SmartPark KE",
+                "brand_name": os.environ.get("BUSINESS_NAME", BRAND_NAME),
                 "user_action": "PAY_NOW",
                 "return_url": os.environ.get("PAYPAL_RETURN_URL", "http://localhost:5000/"),
                 "cancel_url": os.environ.get("PAYPAL_CANCEL_URL", "http://localhost:5000/"),
@@ -422,7 +389,7 @@ def get_receipt(session_id):
     qr_image.save(qr_output, format="PNG")
     qr_code = "data:image/png;base64," + base64.b64encode(qr_output.getvalue()).decode("ascii")
     return {
-        "business_name": os.environ.get("BUSINESS_NAME", "SmartPark KE"),
+        "business_name": os.environ.get("BUSINESS_NAME", BRAND_NAME),
         "business_address": os.environ.get("BUSINESS_ADDRESS", ""),
         "kra_pin": os.environ.get("KRA_PIN", ""),
         "receipt_number": row["receipt_number"],
@@ -489,15 +456,66 @@ def report_rows():
 init_db()
 algorithms.load_heaps_from_db()
 
+# The kiosk is ONE page. Every panel lives on the Overview page and the top
+# bar scrolls to the matching section instead of loading another url, so a
+# driver never loses the live slot map or the entry form by clicking around.
+# (key, label) drives both the nav link and the anchor it points at, so a
+# label and its target can never drift apart.
+NAV_SECTIONS = (
+    ("overview", "Overview"),
+    ("operations", "Entry / Exit"),
+    ("slots", "Slots"),
+    ("rates", "Rates"),
+    ("activity", "Activity"),
+    ("tools", "Tools"),
+)
+
+
+@app.context_processor
+def inject_nav_sections():
+    return {
+        "nav_sections": [
+            {"anchor": anchor, "label": label} for anchor, label in NAV_SECTIONS
+        ],
+    }
+
 
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
+# The app used to serve each panel on its own url. Those links are still in
+# bookmarks, kiosk shortcuts and browser history, so they redirect to the
+# matching section anchor instead of 404ing.
+@app.route("/entry-exit")
+def entry_exit():
+    return redirect(url_for("index") + "#operations")
+
+
+@app.route("/slots")
+def slots_page():
+    return redirect(url_for("index") + "#slots")
+
+
+@app.route("/rates")
+def rates_page():
+    return redirect(url_for("index") + "#rates")
+
+
+@app.route("/activity")
+def activity_page():
+    return redirect(url_for("index") + "#activity")
+
+
+@app.route("/tools")
+def tools_page():
+    return redirect(url_for("index") + "#tools")
+
+
 @app.route("/health/live")
 def health_live():
-    return jsonify({"status": "ok", "service": "smartpark", "time": utc_now()})
+    return jsonify({"status": "ok", "service": "parkflow", "time": utc_now()})
 
 
 @app.route("/health/ready")
@@ -517,138 +535,15 @@ def health_ready():
     return jsonify({"status": "ready" if ready else "not_ready", "checks": checks}), 200 if ready else 503
 
 
-@app.route("/api/auth/login", methods=["POST"])
-def auth_login():
-    data = request.get_json(force=True)
-    username = str(data.get("username") or "").strip()
-    password = str(data.get("password") or "")
-    conn = get_connection()
-    user = conn.execute(
-        "SELECT id, username, password_hash, role, mfa_secret, mfa_enabled FROM users WHERE username = ? AND active = 1",
-        (username,),
-    ).fetchone()
-    conn.close()
-    if user is None or not check_password_hash(user["password_hash"], password):
-        return jsonify({"ok": False, "error": "Invalid sign-in details."}), 401
-    # No MFA: username + password only (legacy mfa_* columns are never read).
-    create_authenticated_session(user, request)
-    return jsonify({"ok": True, "user": {"username": user["username"], "role": user["role"], "mfa_enabled": False}})
-
-
-@app.route("/api/auth/me")
-def auth_me():
-    user = current_authenticated_user()
-    return jsonify({"authenticated": bool(user),
-                    "user": {"username": user["username"], "role": user["role"], "mfa_enabled": False}
-                    if user else None})
-
-
-@app.route("/api/auth/logout", methods=["POST"])
-def auth_logout():
-    token = user_session.get("session_token")
-    if token:
-        conn = get_connection()
-        conn.execute("UPDATE active_sessions SET revoked = 1 WHERE token_hash = ?", (session_token_hash(token),))
-        conn.commit()
-        conn.close()
-    user_session.clear()
-    return jsonify({"ok": True})
-
-
-@app.route("/api/profile", methods=["GET"])
-@require_role()
-def profile():
-    user = current_authenticated_user()
-    conn = get_connection()
-    sessions = conn.execute(
-        "SELECT id, created_at, last_seen, expires_at, user_agent, ip_address, revoked, token_hash "
-        "FROM active_sessions WHERE user_id = ? ORDER BY last_seen DESC", (user["id"],)
-    ).fetchall()
-    conn.close()
-    current_hash = session_token_hash(user_session.get("session_token", ""))
-    visible = []
-    for row in sessions:
-        item = dict(row)
-        item["current"] = (item.pop("token_hash", None) == current_hash)
-        visible.append(item)
-    return jsonify({"user": {"username": user["username"], "role": user["role"], "mfa_enabled": False},
-                    "sessions": visible})
-
-
-@app.route("/api/profile", methods=["PUT"])
-@require_role()
-def update_profile():
-    user = current_authenticated_user()
-    data = request.get_json(force=True)
-    if not check_password_hash(user["password_hash"], str(data.get("current_password") or "")):
-        return jsonify({"ok": False, "error": "Current password is incorrect."}), 400
-    new_username = str(data.get("username") or user["username"]).strip()
-    new_password = str(data.get("new_password") or "")
-    if len(new_username) < 3:
-        return jsonify({"ok": False, "error": "Username must be at least 3 characters."}), 400
-    conn = get_connection()
-    try:
-        if new_username != user["username"]:
-            conn.execute("UPDATE users SET username = ? WHERE id = ?", (new_username, user["id"]))
-        if new_password:
-            if len(new_password) < 8:
-                return jsonify({"ok": False, "error": "New password must be at least 8 characters."}), 400
-            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (generate_password_hash(new_password), user["id"]))
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        return jsonify({"ok": False, "error": "That username is already in use."}), 409
-    finally:
-        conn.close()
-    user_session["username"] = new_username
-    return jsonify({"ok": True, "username": new_username})
-
-
-@app.route("/api/profile/mfa/setup", methods=["POST"])
-@require_role()
-def setup_mfa():
-    # 410 Gone: removed feature, so old clients fail loudly instead of silently.
-    return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
-
-
-@app.route("/api/profile/mfa/enable", methods=["POST"])
-@require_role()
-def enable_mfa():
-    return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
-
-
-@app.route("/api/profile/mfa/disable", methods=["POST"])
-@require_role()
-def disable_mfa():
-    return jsonify({"ok": False, "error": "Two-factor authentication has been removed. Sign in with username and password."}), 410
-
-
-@app.route("/api/profile/sessions/<int:session_id>", methods=["DELETE"])
-@require_role()
-def revoke_session(session_id):
-    user = current_authenticated_user()
-    conn = get_connection()
-    try:
-        target = conn.execute(
-            "SELECT id, token_hash FROM active_sessions WHERE id = ? AND user_id = ?", (session_id, user["id"])
-        ).fetchone()
-        if target is None:
-            return jsonify({"ok": False, "error": "Session not found."}), 404
-        if target["token_hash"] == session_token_hash(user_session.get("session_token", "")):
-            return jsonify({"ok": False, "error": "You cannot revoke the session you are currently using. Sign out instead."}), 400
-        conn.execute("UPDATE active_sessions SET revoked = 1 WHERE id = ? AND user_id = ?", (session_id, user["id"]))
-        conn.commit()
-    finally:
-        conn.close()
-    return jsonify({"ok": True})
-
-
 # Display module: live slot availability (polled by the UI).
 @app.route("/api/slots")
 def api_slots():
+    # available_total is the whole-lot figure the entry panel uses to lock
+    # itself out when not a single bay is left.
     return jsonify({
         "slots": algorithms.list_slots(),
         "stats": algorithms.get_dashboard_stats(),
+        "available_total": algorithms.count_available_slots(),
     })
 
 
@@ -658,7 +553,6 @@ def api_rates():
 
 
 @app.route("/api/rates", methods=["PUT"])
-@require_role("manager")
 def api_update_rates():
     data = request.get_json(force=True)
     submitted = data.get("rates")
@@ -714,7 +608,15 @@ def api_entry():
 
     session, error = algorithms.register_entry(plate, vtype, phone)
     if error:
-        return jsonify({"ok": False, "error": error}), 400
+        # A full lot is a temporarily closed door, not a typo the driver can
+        # fix by retyping: `full` locks the entry panel and Retry-After tells
+        # API clients when it is worth asking again.
+        full = algorithms.count_available_slots() == 0
+        response = jsonify({"ok": False, "error": error, "full": full})
+        if full:
+            response.headers["Retry-After"] = "60"
+            return response, 503
+        return response, 400
 
     ticket_code = make_ticket_code(session)
     # Encode the page url, not the bare code, so a phone camera opens details.
@@ -751,7 +653,7 @@ def api_ticket_resolve(code):
 # Public scan pages opened by the QR codes. No login: the ticket is HMAC-signed
 # and the receipt link carries its own token, so neither url can be guessed.
 def public_page_context(mode, session=None, receipt=None, error=None):
-    business_name = (receipt or {}).get("business_name") or os.environ.get("BUSINESS_NAME", "SmartPark KE")
+    business_name = (receipt or {}).get("business_name") or os.environ.get("BUSINESS_NAME", BRAND_NAME)
     return {
         "mode": mode,
         "session": session,
@@ -855,7 +757,7 @@ def api_pay():
                 "payment": {"type": "stk_push", "status": "pending", "phone": session["owner_phone"],
                             "reference": existing["provider_reference"], "message": "A payment request is already pending."},
             })
-        external_reference = f"SMARTPARK-{session_id}-{uuid.uuid4().hex[:10].upper()}"
+        external_reference = f"PARKFLOW-{session_id}-{uuid.uuid4().hex[:10].upper()}"
         try:
             body, _ = initiate_payhero_stk(session, external_reference)
             record_payment(session, "pending", external_reference, body.get("reference"), "mpesa")
@@ -993,7 +895,6 @@ def api_receipt(session_id):
 
 
 @app.route("/api/reports/export")
-@require_role("manager", "attendant")
 def export_report():
     report_format = request.args.get("format", "xlsx").lower()
     rows = report_rows()
@@ -1007,7 +908,7 @@ def export_report():
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Recent Activity"
-        sheet.append(["SmartPark KE Payment and Activity Report"])
+        sheet.append(["ParkFlow Payment and Activity Report"])
         sheet.append([f"Generated: {generated_at}"])
         sheet.append([])
         sheet.append(headers)
@@ -1024,7 +925,7 @@ def export_report():
         output = BytesIO()
         workbook.save(output)
         output.seek(0)
-        return send_file(output, as_attachment=True, download_name="smartpark-report.xlsx",
+        return send_file(output, as_attachment=True, download_name="parkflow-report.xlsx",
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     if report_format == "pdf":
@@ -1032,7 +933,7 @@ def export_report():
         document = SimpleDocTemplate(output, pagesize=landscape(letter), leftMargin=0.35 * inch,
                                      rightMargin=0.35 * inch, topMargin=0.35 * inch, bottomMargin=0.35 * inch)
         styles = getSampleStyleSheet()
-        content = [Paragraph("SmartPark KE Payment and Activity Report", styles["Title"]),
+        content = [Paragraph("ParkFlow Payment and Activity Report", styles["Title"]),
                    Paragraph(f"Generated: {generated_at}", styles["Normal"]), Spacer(1, 0.18 * inch)]
         table_data = [headers] + [[str(row[header]) for header in headers] for row in rows]
         table = Table(table_data, repeatRows=1)
@@ -1048,11 +949,11 @@ def export_report():
         content.append(table)
         document.build(content)
         output.seek(0)
-        return send_file(output, as_attachment=True, download_name="smartpark-report.pdf", mimetype="application/pdf")
+        return send_file(output, as_attachment=True, download_name="parkflow-report.pdf", mimetype="application/pdf")
 
     if report_format == "docx":
         document = Document()
-        document.add_heading("SmartPark KE Payment and Activity Report", 0)
+        document.add_heading("ParkFlow Payment and Activity Report", 0)
         document.add_paragraph(f"Generated: {generated_at}")
         table = document.add_table(rows=1, cols=len(headers))
         table.style = "Table Grid"
@@ -1065,7 +966,7 @@ def export_report():
         output = BytesIO()
         document.save(output)
         output.seek(0)
-        return send_file(output, as_attachment=True, download_name="smartpark-report.docx",
+        return send_file(output, as_attachment=True, download_name="parkflow-report.docx",
                          mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     return jsonify({"ok": False, "error": "Unsupported report format."}), 400
@@ -1078,9 +979,8 @@ def api_activity():
     return jsonify({"sessions": sessions, "overstays": sum(1 for s in sessions if s.get("overstay"))})
 
 
-# Attendant tools: trie plate search, overrides, analytics.
+# Attendant tools: trie plate search.
 @app.route("/api/plates")
-@require_role()
 def api_plate_search():
     prefix = request.args.get("prefix", "")
     if len(prefix) < 1:
@@ -1104,53 +1004,6 @@ def api_plate_search():
         {"plate_number": plate, **(live.get(plate) or {"slot_number": None, "status": None})}
         for plate in matches
     ]})
-
-
-@app.route("/api/slots/<int:slot_number>/maintenance", methods=["POST"])
-@require_role("manager")
-def api_slot_maintenance(slot_number):
-    data = request.get_json(force=True) or {}
-    out_of_service = bool(data.get("out_of_service"))
-    reason = str(data.get("reason") or "").strip()
-    if not reason:
-        return jsonify({"ok": False, "error": "A reason is required for the audit trail."}), 400
-    ok, error = algorithms.set_slot_maintenance(
-        slot_number, out_of_service, reason, user_session.get("username") or "unknown"
-    )
-    if not ok:
-        return jsonify({"ok": False, "error": error}), 400
-    return jsonify({"ok": True, "slot_number": slot_number,
-                    "out_of_service": out_of_service, "status": "maintenance" if out_of_service else "available"})
-
-
-@app.route("/api/barrier/override", methods=["POST"])
-@require_role("manager")
-def api_barrier_override():
-    data = request.get_json(force=True) or {}
-    try:
-        session_id = int(data.get("session_id"))
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "error": "session_id is required."}), 400
-    reason = str(data.get("reason") or "").strip()
-    if not reason:
-        return jsonify({"ok": False, "error": "A reason is required for the audit trail."}), 400
-    result, error = algorithms.record_barrier_override(
-        session_id, reason, user_session.get("username") or "unknown"
-    )
-    if error:
-        return jsonify({"ok": False, "error": error}), 400
-    return jsonify({"ok": True, "barrier": result})
-
-
-@app.route("/api/analytics")
-@require_role("manager")
-def api_analytics():
-    try:
-        days = max(1, min(60, int(request.args.get("days", 14))))
-    except ValueError:
-        days = 14
-    return jsonify({"ok": True, "analytics": algorithms.analytics_summary(days=days),
-                    "overstays": algorithms.count_overstays()})
 
 
 if __name__ == "__main__":

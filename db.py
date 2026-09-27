@@ -1,7 +1,7 @@
 """
 db.py
 =====
-SmartPark KE — Database connection and schema.
+ParkFlow — Database connection and schema.
 
 Uses PostgreSQL when `DATABASE_URL` is configured for production concurrency,
 and falls back to Python's built-in `sqlite3` module for local development and
@@ -23,15 +23,27 @@ ENTITY-RELATIONSHIP SUMMARY
 ----------------------------
 parking_slots (1) --- (0..1 active) parking_sessions (M) --- (1) vehicles
 parking_sessions (1) --- (0..1) payments
+
+The `users` and `active_sessions` tables are still created for schema
+stability, but nothing writes to or reads from them any more: sign-in was
+removed and the app is an open kiosk. They are deliberately not dropped so
+that any historical rows stay intact for audit.
 """
 import sqlite3
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("parkflow")
+
+# Filename used before the ParkFlow rebrand. Kept only so an existing local
+# install keeps working instead of silently starting a brand-new empty lot.
+LEGACY_DB_NAME = "smartpark.db"
+DEFAULT_DB_NAME = "parkflow.db"
 
 try:
     import psycopg
@@ -40,7 +52,28 @@ except ImportError:  # PostgreSQL is optional for local SQLite development.
     psycopg = None
     dict_row = None
 
-DB_PATH = Path(os.environ.get("SQLITE_DB_PATH", Path(__file__).parent / "smartpark.db"))
+def resolve_sqlite_path():
+    """Resolve the SQLite file, keeping a pre-rebrand database in service.
+
+    ParkFlow's own file is ``parkflow.db``. When only the legacy
+    ``smartpark.db`` exists next to it (an install created before the
+    rebrand), that file keeps being used — starting a fresh empty lot
+    instead would look exactly like data loss — and the operator is told to
+    rename it at their convenience.
+    """
+    configured = os.environ.get("SQLITE_DB_PATH", "").strip()
+    path = Path(configured) if configured else Path(__file__).parent / DEFAULT_DB_NAME
+    legacy = path.with_name(LEGACY_DB_NAME)
+    if not path.exists() and legacy.exists():
+        logger.warning(
+            "Using legacy SQLite database %s (pre-rebrand name). Rename it to %s to finish the ParkFlow rebrand.",
+            legacy, path.name,
+        )
+        return legacy
+    return path
+
+
+DB_PATH = resolve_sqlite_path()
 
 
 def resolve_database_url():
@@ -270,14 +303,34 @@ def get_connection():
     return conn
 
 
+def return_maintenance_bays_to_service(conn, now):
+    """Put bays left 'maintenance' by the removed overrides feature back in service.
+
+    The attendant controls that could restore such a bay are gone, so a bay
+    still flagged out of service would stay unusable forever and quietly
+    shrink the lot. Returning it to 'available' restores capacity, and each
+    change is written to the override_events audit trail that is kept for
+    history. Returns the number of bays released.
+    """
+    rows = conn.execute(
+        "SELECT id, slot_number FROM parking_slots WHERE status = 'maintenance'"
+    ).fetchall()
+    for row in rows:
+        conn.execute("UPDATE parking_slots SET status = 'available' WHERE id = ?", (row["id"],))
+        conn.execute(
+            "INSERT INTO override_events (created_at, username, action, target, reason) "
+            "VALUES (?, 'system', 'maintenance_reactivated', ?, ?)",
+            (now, f"slot:{row['slot_number']}", "Overrides removed; bay returned to service."),
+        )
+    return len(rows)
+
+
 def init_db():
     """Create tables if they don't exist, and seed slots on first run."""
     conn = get_connection()
     use_postgres = bool(resolve_database_url() or DATABASE_URL)
     if use_postgres:
         conn.executescript(POSTGRES_SCHEMA_SQL)
-        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT")
-        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0")
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         # Race-safe seed: concurrent gunicorn workers must not hit UNIQUE violations.
         for max_minutes, fee_amount in [(30, 0), (120, 50), (240, 100), (360, 300), (2147483647, 500)]:
@@ -291,18 +344,6 @@ def init_db():
             "ON CONFLICT(id) DO NOTHING",
             (now,),
         )
-        admin_username = os.environ.get("ADMIN_USERNAME")
-        admin_password = os.environ.get("ADMIN_PASSWORD")
-        if admin_username and admin_password and not conn.execute(
-            "SELECT 1 FROM users WHERE username = ?", (admin_username,)
-        ).fetchone():
-            try:
-                conn.execute(
-                    "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'manager', ?)",
-                    (admin_username, generate_password_hash(admin_password), now),
-                )
-            except Exception:
-                conn.rollback()  # sibling worker won the race; safe to continue
         if conn.execute("SELECT COUNT(*) AS n FROM parking_slots").fetchone()["n"] == 0:
             slot_number = 1
             for vtype, count in LOT_LAYOUT.items():
@@ -313,6 +354,9 @@ def init_db():
                         (slot_number, ZONE_OF_TYPE[vtype], vtype),
                     )
                     slot_number += 1
+        released = return_maintenance_bays_to_service(conn, now)
+        if released:
+            logger.warning("Released %s bay(s) left out of service by the removed overrides feature.", released)
         conn.commit()
         conn.close()
         return
@@ -331,30 +375,7 @@ def init_db():
         (now,),
     )
     conn.commit()
-    # Race-safe admin bootstrap: pre-check plus the UNIQUE constraint.
-    admin_username = os.environ.get("ADMIN_USERNAME")
-    admin_password = os.environ.get("ADMIN_PASSWORD")
-    if admin_username and admin_password and not conn.execute(
-        "SELECT 1 FROM users WHERE username = ?", (admin_username,)
-    ).fetchone():
-        try:
-            conn.execute(
-                "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'manager', ?)",
-                (admin_username, generate_password_hash(admin_password),
-                 datetime.now(timezone.utc).replace(microsecond=0).isoformat()),
-            )
-        except Exception:
-            conn.rollback()  # lost the race to a sibling worker; safe to continue
-    conn.commit()
     payment_columns = {row["name"] for row in conn.execute("PRAGMA table_info(payments)")}
-    user_columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-    user_migrations = {
-        "mfa_secret": "ALTER TABLE users ADD COLUMN mfa_secret TEXT",
-        "mfa_enabled": "ALTER TABLE users ADD COLUMN mfa_enabled INTEGER NOT NULL DEFAULT 0",
-    }
-    for column, statement in user_migrations.items():
-        if column not in user_columns:
-            conn.execute(statement)
     session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(parking_sessions)")}
     session_migrations = {
         "subtotal_amount": "ALTER TABLE parking_sessions ADD COLUMN subtotal_amount INTEGER",
@@ -377,9 +398,12 @@ def init_db():
         if column not in payment_columns:
             conn.execute(statement)
     conn.execute(
-        "UPDATE payments SET receipt_number = 'SP-' || upper(hex(randomblob(8))) "
+        "UPDATE payments SET receipt_number = 'PF-' || upper(hex(randomblob(8))) "
         "WHERE status = 'success' AND receipt_number IS NULL"
     )
+    released = return_maintenance_bays_to_service(conn, now)
+    if released:
+        logger.warning("Released %s bay(s) left out of service by the removed overrides feature.", released)
     conn.commit()
 
     # Slot layout seed: ON CONFLICT(slot_number) makes concurrent boots safe.

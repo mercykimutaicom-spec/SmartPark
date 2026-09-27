@@ -10,10 +10,10 @@ import db
 import algorithms
 
 
-class SmartParkFeatureTests(unittest.TestCase):
+class ParkFlowFeatureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Isolate from the developer's real smartpark.db: point DB_PATH at a
+        # Isolate from the developer's real SQLite database: point DB_PATH at a
         # temp file BEFORE importing app (app.py runs init_db() at import).
         cls.temp_dir = tempfile.TemporaryDirectory()
         db.DB_PATH = Path(cls.temp_dir.name) / "features.db"
@@ -26,12 +26,6 @@ class SmartParkFeatureTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.temp_dir.cleanup()
-
-    def login_manager(self):
-        client = self.app.test_client()
-        response = client.post("/api/auth/login", json={"username": "manager", "password": "manager123"})
-        self.assertEqual(response.status_code, 200)
-        return client
 
     # Billing boundaries
     def test_calculate_fee_tier_boundaries(self):
@@ -93,14 +87,12 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertEqual(trie.starts_with("ZZZ"), [])
         self.assertEqual(trie.starts_with("KDA1"), ["KDA123B"])
 
-    def test_plate_search_endpoint_requires_manager(self):
-        client = self.app.test_client()
-        self.assertEqual(client.get("/api/plates?prefix=K").status_code, 401)
+    def test_plate_search_is_open(self):
+        client = self.app.test_client()  # never signed in: there is no sign-in
         # Own vehicle: never depend on another test's leftover data.
         session, error = self.algorithms.register_entry("PLTSEARCH1", "car", "0700000061")
         self.assertIsNone(error)
-        manager = self.login_manager()
-        response = manager.get("/api/plates?prefix=PLTSEAR")
+        response = client.get("/api/plates?prefix=PLTSEAR")
         self.assertEqual(response.status_code, 200)
         matches = [m["plate_number"] for m in response.json["matches"]]
         self.assertIn("PLTSEARCH1", matches)
@@ -150,7 +142,7 @@ class SmartParkFeatureTests(unittest.TestCase):
         })
         self.assertEqual(entry.status_code, 200)
         code = entry.json["ticket_code"]
-        self.assertTrue(code.startswith("SP-TK-"))
+        self.assertTrue(code.startswith("PF-TK-"))
         self.assertTrue(entry.json["ticket_qr"].startswith("data:image/png;base64,"))
         resolved = client.get(f"/api/ticket/{code}")
         self.assertEqual(resolved.status_code, 200)
@@ -246,55 +238,167 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertIn("/static/img/favicon.svg", html)
         self.assertIn("/static/img/mark.svg", html)
 
-    # Attendant overrides
-    def test_slot_maintenance_toggle_and_allocation_exclusion(self):
-        client = self.login_manager()
-        # Pick a bay that is genuinely free right now (other tests park cars).
-        slots = client.get("/api/slots").json["slots"]
-        free = next(s for s in slots if s["status"] == "available" and s["vehicle_type"] == "car")
-        target = free["slot_number"]
-        out = client.post(f"/api/slots/{target}/maintenance", json={"out_of_service": True, "reason": "test jam"})
-        self.assertEqual(out.status_code, 200)
-        session, error = self.algorithms.register_entry("MAINTX1", "car", "0700000021")
-        self.assertIsNone(error)
-        self.assertNotEqual(session["slot_number"], target)
-        self._cleanup_plates("MAINTX1")
-        back = client.post(f"/api/slots/{target}/maintenance", json={"out_of_service": False, "reason": "test done"})
-        self.assertEqual(back.status_code, 200)
-        conn = db.get_connection()
-        status = conn.execute("SELECT status FROM parking_slots WHERE slot_number = ?", (target,)).fetchone()["status"]
-        events = conn.execute("SELECT COUNT(*) AS n FROM override_events WHERE action = 'slot_maintenance'").fetchone()["n"]
-        conn.close()
-        self.assertEqual(status, "available")
-        self.assertGreaterEqual(events, 2)
+    def test_the_one_page_has_no_duplicate_element_ids(self):
+        # Six panels now share a single document. A duplicate id is invalid HTML
+        # and silently breaks byId(): it returns the first match, so the second
+        # element is never wired up. That is how the exit ticket input and the
+        # ticket modal's <code> both ended up called #ticket-code, and the code
+        # was then written as textContent to an <input> — never shown.
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        ids = re.findall(r'\bid="([^"]+)"', html)
+        dupes = sorted({i for i in ids if ids.count(i) > 1})
+        self.assertEqual(dupes, [], f"duplicate element ids on the one page: {dupes}")
+        # The two ticket-code elements must stay distinct and both stay present.
+        self.assertEqual(ids.count("ticket-code"), 1)      # the modal's <code>
+        self.assertEqual(ids.count("exit-ticket-code"), 1)  # the exit-form input
 
-    def test_barrier_override_rejects_unpaid_and_audits_paid(self):
-        client = self.login_manager()
-        session, _ = self.algorithms.register_entry("OVRTEST1", "car", "0700000031")
-        refused = client.post("/api/barrier/override", json={"session_id": session["id"], "reason": "vip"})
-        self.assertEqual(refused.status_code, 400)
-        self.assertIn("completed", refused.json["error"])
-        conn = db.get_connection()
-        conn.execute(
-            "UPDATE parking_sessions SET entry_time = ? WHERE id = ?",
-            ((datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat(), session["id"]),
+    def test_every_panel_lives_on_the_one_overview_page(self):
+        # The kiosk is a single page: the top bar scrolls to a section instead
+        # of loading another url, so a driver never loses the live slot map or
+        # the entry form by clicking around.
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        sections = [
+            ("overview", "stat-available", "Overview"),
+            ("operations", "entry-form", "Entry / Exit"),
+            ("slots", "slot-grid", "Slots"),
+            ("rates", "rates-list", "Rates"),
+            ("activity", "activity-list", "Activity"),
+            ("tools", "plate-search", "Tools"),
+        ]
+        for anchor, marker, label in sections:
+            self.assertIn(f'id="{anchor}"', html, f"missing the #{anchor} section")
+            self.assertIn(f'id="{marker}"', html, f"missing the {marker} panel")
+            self.assertIn(f">{label}</a>", html, f"missing the {label} nav link")
+        for chrome in ('id="toast-stack"', 'id="ticket-modal"'):
+            self.assertIn(chrome, html)
+
+    def test_top_bar_links_are_anchors_to_real_sections(self):
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        links = re.findall(r'<a class="topnav__link[^"]*" href="#([^"]+)"', html)
+        self.assertEqual(
+            links, ["overview", "operations", "slots", "rates", "activity", "tools"],
+            "the top bar must scroll to sections on the one page",
         )
-        conn.commit()
-        conn.close()
-        exited, err = self.algorithms.process_exit("OVRTEST1")
-        self.assertIsNone(err)
-        settled, err2 = self.algorithms.settle_payment(exited["id"], "cash", "CASH-OVR")
-        self.assertIsNone(err2)
-        override = client.post("/api/barrier/override", json={"session_id": settled["id"], "reason": "sensor missed car"})
-        self.assertEqual(override.status_code, 200)
-        self.assertTrue(override.json["barrier"]["opened"])
+        for anchor in links:
+            self.assertIn(f'id="{anchor}"', html, f"#{anchor} has no target on the page")
+        # No nav link may point at another url any more.
+        for stale in ('href="/entry-exit"', 'href="/rates"', 'href="/slots"',
+                      'href="/activity"', 'href="/tools"'):
+            self.assertNotIn(stale, html, f"{stale} would reload the page instead of scrolling")
+
+    def test_legacy_subpage_urls_redirect_to_their_section(self):
+        # The old per-panel urls are still in bookmarks and kiosk shortcuts.
+        client = self.app.test_client()
+        for path, anchor in (
+            ("/entry-exit", "#operations"),
+            ("/slots", "#slots"),
+            ("/rates", "#rates"),
+            ("/activity", "#activity"),
+            ("/tools", "#tools"),
+        ):
+            response = client.get(path)
+            self.assertEqual(response.status_code, 302, f"{path} must redirect, not 404")
+            self.assertTrue(
+                response.headers["Location"].endswith(anchor),
+                f"{path} must land on {anchor}, got {response.headers['Location']}",
+            )
+
+    # Full lot: the entry door is shut and the driver is told why.
+    def _fill_the_lot(self):
+        """Occupy every bay, then resync the in-memory allocation cache."""
         conn = db.get_connection()
-        events = conn.execute(
-            "SELECT COUNT(*) AS n FROM override_events WHERE action = 'barrier_override' AND target = ?",
-            (f"session:{settled['id']}",),
-        ).fetchone()["n"]
-        conn.close()
-        self.assertEqual(events, 1)
+        try:
+            conn.execute("UPDATE parking_slots SET status = 'occupied'")
+            conn.commit()
+        finally:
+            conn.close()
+        self.algorithms.load_heaps_from_db()
+        self.assertEqual(self.algorithms.count_available_slots(), 0)
+
+    def _release_every_bay(self):
+        conn = db.get_connection()
+        try:
+            conn.execute("UPDATE parking_slots SET status = 'available'")
+            conn.commit()
+        finally:
+            conn.close()
+        self.algorithms.load_heaps_from_db()
+
+    def test_entry_is_refused_while_no_bay_is_free(self):
+        self._fill_the_lot()
+        try:
+            session, error = self.algorithms.register_entry("FULL001", "car", "0700000021")
+            self.assertIsNone(session)
+            self.assertEqual(error, self.algorithms.PARKING_FULL_MESSAGE)
+            # The refusal must not leave a half-written vehicle behind.
+            conn = db.get_connection()
+            try:
+                vehicle = conn.execute(
+                    "SELECT id FROM vehicles WHERE plate_number = 'FULL001'"
+                ).fetchone()
+                sessions = conn.execute(
+                    "SELECT COUNT(*) AS n FROM parking_sessions ps "
+                    "JOIN vehicles v ON v.id = ps.vehicle_id WHERE v.plate_number = 'FULL001'"
+                ).fetchone()["n"]
+            finally:
+                conn.close()
+            self.assertIsNone(vehicle, "a refused entry must not create a vehicle record")
+            self.assertEqual(sessions, 0)
+        finally:
+            self._release_every_bay()
+
+    def test_entry_refusal_survives_a_stale_slot_cache(self):
+        # The heap says "space available" (nothing was pushed back on release)
+        # while the database says the lot is full: the database must win.
+        self._fill_the_lot()
+        self.algorithms._free_slot_heaps.setdefault("car", []).append((0, 1))
+        try:
+            session, error = self.algorithms.register_entry("FULL002", "car", "0700000022")
+            self.assertIsNone(session)
+            self.assertEqual(error, self.algorithms.PARKING_FULL_MESSAGE)
+            conn = db.get_connection()
+            try:
+                active = conn.execute(
+                    "SELECT COUNT(*) AS n FROM parking_sessions WHERE slot_id = 1 AND status = 'active'"
+                ).fetchone()["n"]
+            finally:
+                conn.close()
+            self.assertEqual(active, 0, "a bay already taken must never be handed out twice")
+        finally:
+            self._release_every_bay()
+
+    def test_entry_endpoint_reports_a_full_lot(self):
+        self._fill_the_lot()
+        try:
+            client = self.app.test_client()
+            response = client.post("/api/entry", json={
+                "plate_number": "FULL003", "vehicle_type": "car", "owner_phone": "0700000023",
+            })
+            self.assertEqual(response.status_code, 503)
+            self.assertTrue(response.json["full"])
+            self.assertEqual(response.json["error"], self.algorithms.PARKING_FULL_MESSAGE)
+            self.assertEqual(response.headers.get("Retry-After"), "60")
+            # The live counter the UI locks itself on agrees.
+            self.assertEqual(client.get("/api/slots").json["available_total"], 0)
+        finally:
+            self._release_every_bay()
+
+    def test_entry_reopens_once_a_bay_is_released(self):
+        self._fill_the_lot()
+        conn = db.get_connection()
+        try:
+            conn.execute("UPDATE parking_slots SET status = 'available' WHERE slot_number = 1")
+            conn.commit()
+        finally:
+            conn.close()
+        self.algorithms.load_heaps_from_db()
+        try:
+            session, error = self.algorithms.register_entry("FULL004", "car", "0700000024")
+            self.assertIsNone(error)
+            self.assertEqual(session["slot_number"], 1)
+            self._cleanup_plates("FULL004")
+        finally:
+            self._release_every_bay()
 
     # Overstay alerts
     def test_overstay_flag_and_count(self):
@@ -312,33 +416,156 @@ class SmartParkFeatureTests(unittest.TestCase):
         self.assertGreaterEqual(self.algorithms.count_overstays(), 1)
         self._cleanup_plates("OVERSTAY1")
 
-    # Analytics
-    def test_analytics_summary_shape_and_revenue(self):
-        session, _ = self.algorithms.register_entry("ANALYTIC1", "car", "0700000051")
+    # Removed features: analytics and attendant overrides
+    def test_analytics_and_override_endpoints_are_gone(self):
+        client = self.app.test_client()
+        for path in ("/analytics", "/api/analytics"):
+            self.assertEqual(client.get(path).status_code, 404, path)
+        self.assertEqual(
+            client.post("/api/barrier/override", json={"session_id": 1, "reason": "x"}).status_code, 404)
+        self.assertEqual(
+            client.post("/api/slots/1/maintenance", json={"out_of_service": True, "reason": "x"}).status_code, 404)
+        for name in ("analytics_summary", "set_slot_maintenance", "record_barrier_override", "record_override_event"):
+            self.assertFalse(hasattr(self.algorithms, name), f"{name} should be gone")
+
+    def test_authentication_endpoints_are_gone(self):
+        client = self.app.test_client()
+        for method, path in (
+            ("post", "/api/auth/login"), ("post", "/api/auth/logout"), ("get", "/api/auth/me"),
+            ("get", "/api/profile"), ("put", "/api/profile"),
+            ("post", "/api/profile/mfa/setup"), ("post", "/api/profile/mfa/enable"),
+            ("post", "/api/profile/mfa/disable"), ("delete", "/api/profile/sessions/1"),
+        ):
+            response = getattr(client, method)(path, json={})
+            self.assertEqual(response.status_code, 404, f"{method.upper()} {path} should not exist")
+
+    def test_management_endpoints_need_no_sign_in(self):
+        client = self.app.test_client()  # a fresh client, never signed in
+        self.assertEqual(client.get("/api/rates").status_code, 200)
+        self.assertEqual(client.get("/api/plates?prefix=ZZZZ").status_code, 200)
+        self.assertEqual(client.get("/api/activity").status_code, 200)
+        export = client.get("/api/reports/export?format=xlsx")
+        self.assertEqual(export.status_code, 200)
+        self.assertTrue(export.data[:2] == b"PK", "an unauthenticated export must still be a real workbook")
+
+    def test_no_auth_chrome_left_in_the_ui(self):
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        for marker in ("login-modal", "login-form", "profile-modal", "auth-btn", "profile-btn"):
+            self.assertNotIn(marker, html, f"{marker} still on the page")
+        self.assertNotIn("Sign in", html, "the page still asks for a sign-in")
+
+    def test_removed_features_leave_no_trace_in_the_ui(self):
+        home = self.app.test_client().get("/").data.decode("utf-8")
+        self.assertNotIn("Analytics", home)
+        self.assertNotIn('href="/analytics"', home)
+        for marker in ("override-open", "maintenance-slot", "maintenance-off", "override-session"):
+            self.assertNotIn(marker, home, f"{marker} still exposed on the page")
+
+    def test_override_audit_history_is_preserved(self):
+        # The overrides feature is gone, but its audit trail is financial-grade
+        # history: the table and every row recorded against it must survive.
         conn = db.get_connection()
-        conn.execute(
-            "UPDATE parking_sessions SET entry_time = ? WHERE id = ?",
-            ((datetime.now(timezone.utc) - timedelta(minutes=31)).isoformat(), session["id"]),
+        try:
+            conn.execute(
+                "INSERT INTO override_events (created_at, username, action, target, reason) "
+                "VALUES (?, 'attendant', 'slot_maintenance', 'slot:1', 'historic entry kept for audit')",
+                (datetime.now(timezone.utc).replace(microsecond=0).isoformat(),),
+            )
+            conn.commit()
+            rows = conn.execute(
+                "SELECT action, target FROM override_events WHERE target = 'slot:1'"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertTrue(any(row["action"] == "slot_maintenance" for row in rows))
+
+    def test_bays_left_out_of_service_return_on_boot(self):
+        # Without the removed maintenance control a stranded bay would stay
+        # unusable forever, so start-up returns it to service and audits it.
+        conn = db.get_connection()
+        try:
+            conn.execute("UPDATE parking_slots SET status = 'maintenance' WHERE slot_number = 2")
+            conn.commit()
+        finally:
+            conn.close()
+        try:
+            db.init_db()
+            conn = db.get_connection()
+            try:
+                status = conn.execute(
+                    "SELECT status FROM parking_slots WHERE slot_number = 2"
+                ).fetchone()["status"]
+                audited = conn.execute(
+                    "SELECT COUNT(*) AS n FROM override_events WHERE action = 'maintenance_reactivated'"
+                ).fetchone()["n"]
+            finally:
+                conn.close()
+            self.assertEqual(status, "available")
+            self.assertGreaterEqual(audited, 1)
+        finally:
+            self._release_every_bay()
+
+    # ParkFlow brand
+    def test_ui_is_branded_parkflow(self):
+        client = self.app.test_client()
+        html = client.get("/").data.decode("utf-8")
+        self.assertIn("ParkFlow", html)
+        self.assertNotIn("SmartPark", html, "the page still shows the old brand")
+        entry = client.post("/api/entry", json={
+            "plate_number": "BRAND001", "vehicle_type": "car", "owner_phone": "0700000081",
+        })
+        self.assertEqual(entry.status_code, 200)
+        self.assertTrue(entry.json["ticket_code"].startswith("PF-TK-"))
+        self._cleanup_plates("BRAND001")
+
+    def test_legacy_ticket_prefix_still_resolves(self):
+        # Paper tickets printed before the rebrand must keep working.
+        client = self.app.test_client()
+        entry = client.post("/api/entry", json={
+            "plate_number": "LEGACYTK1", "vehicle_type": "car", "owner_phone": "0700000082",
+        })
+        self.assertEqual(entry.status_code, 200)
+        legacy_code = "SP-TK" + entry.json["ticket_code"][len("PF-TK"):]
+        resolved = client.get(f"/api/ticket/{legacy_code}")
+        self.assertEqual(resolved.status_code, 200)
+        self.assertEqual(resolved.json["plate_number"], "LEGACYTK1")
+        self._cleanup_plates("LEGACYTK1")
+
+    def test_entry_section_shows_the_full_lot_notice(self):
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        self.assertIn('id="lot-full"', html)
+        self.assertIn("Parking is currently full, please try again later.", html)
+        self.assertIn('id="entry-submit"', html)
+
+    def test_full_lot_notice_is_hidden_while_bays_are_free(self):
+        # Regression: the notice is toggled with el.hidden, but
+        # `.lot-full{display:grid}` outranks the user-agent [hidden] rule, so
+        # the banner stayed on screen and told drivers the lot was full while
+        # the Slots page showed free bays. A global [hidden] reset is what
+        # keeps the attribute authoritative for every component.
+        css_path = Path(__file__).resolve().parent.parent / "static" / "css" / "style.css"
+        css = css_path.read_text(encoding="utf-8")
+        # Anchor to a *global* rule only: `.fee-box[hidden]` is class-prefixed
+        # and would otherwise satisfy this match on its own.
+        rule = re.search(r"(?m)^[^{}\n]*\[hidden\]\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(
+            rule, "stylesheet must force [hidden] to beat component display rules"
         )
-        conn.commit()
-        conn.close()
-        exited, err = self.algorithms.process_exit("ANALYTIC1")
-        self.assertIsNone(err)
-        settled, err2 = self.algorithms.settle_payment(exited["id"], "cash", "CASH-AN1")
-        self.assertIsNone(err2)
+        self.assertIn("display", rule.group(1))
+        self.assertIn("none", rule.group(1))
+        self.assertIn(
+            "!important", rule.group(1),
+            "[hidden] needs !important to outrank .lot-full{display:grid}",
+        )
 
-        summary = self.algorithms.analytics_summary(days=14)
-        self.assertGreaterEqual(summary["total_revenue"], settled["fee_charged"])
-        self.assertTrue(summary["revenue_by_day"])
-        self.assertIn("busiest_zone", summary)
-        zones = {z["zone"] for z in summary["occupancy_by_zone"]}
-        self.assertEqual(zones, {"A", "B", "C"})
-        self.assertTrue(any(m["method"] == "cash" for m in summary["revenue_by_method"]))
-
-        client = self.login_manager()
-        response = client.get("/api/analytics")
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json["ok"])
+        # And the notice must ship hidden, so a lot with free bays is silent.
+        html = self.app.test_client().get("/").data.decode("utf-8")
+        banner = re.search(r'<p[^>]*id="lot-full"[^>]*>', html)
+        self.assertIsNotNone(banner, "the entry section must keep the full-lot notice")
+        self.assertIn(
+            "hidden", banner.group(0),
+            "the full-lot notice must ship hidden while bays are free",
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}ParkFlow{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/favicon.svg') }}">
+</head>
+<body>
+
+<div class="bg-scene" aria-hidden="true">
+  <div class="bg-glow bg-glow--amber"></div>
+  <div class="bg-glow bg-glow--teal"></div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+<div class="payment-modal" id="payment-modal" hidden role="dialog" aria-modal="true" aria-labelledby="payment-modal-title">
+  <div class="payment-modal__card">
+    <div class="payment-modal__icon" id="payment-modal-icon" aria-hidden="true">⌛</div>
+    <h2 id="payment-modal-title">Waiting for payment</h2>
+    <p id="payment-modal-message">Check your phone and enter your M-Pesa PIN to continue.</p>
+    <button type="button" class="btn btn--primary" id="payment-modal-close" hidden>Close</button>
+  </div>
+</div>
+
+<div class="receipt-modal" id="receipt-modal" hidden role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+  <article class="receipt-card">
+    <div class="receipt-card__head">
+      <div>
+        <span class="receipt-card__eyebrow" id="receipt-business-name">ParkFlow</span>
+        <span class="receipt-card__merchant" id="receipt-business-details"></span>
+        <h2 id="receipt-title">Payment receipt</h2>
+      </div>
+      <span class="receipt-card__check">Paid</span>
+    </div>
+    <div class="receipt-card__number" id="receipt-number">Receipt —</div>
+    <div class="receipt-card__details" id="receipt-details"></div>
+    <div class="receipt-card__signature">
+      <span>Verification</span>
+      <strong class="receipt-card__signature-mark">ParkFlow</strong>
+      <code id="receipt-verified">Verified</code>
+    </div>
+    <div class="receipt-card__qr">
+      <img id="receipt-qr" alt="Scan to verify this receipt">
+      <span>Scan to verify receipt and vehicle payment</span>
+    </div>
+    <div class="receipt-card__actions">
+      <button type="button" class="btn btn--primary" id="receipt-print">Print receipt</button>
+      <button type="button" class="page-btn" id="receipt-close">Close</button>
+    </div>
+  </article>
+</div>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <div class="brand">
+      <span class="brand__mark">
+        <img src="{{ url_for('static', filename='img/mark.svg') }}" width="26" height="26" alt="">
+      </span>
+      <div class="brand__text">
+        <span class="brand__name">Park<em>Flow</em></span>
+        <span class="brand__sub">Automated Parking &amp; Access Control</span>
+      </div>
+    </div>
+    <nav class="topnav" aria-label="Primary navigation">
+      {% for section in nav_sections %}
+      <a class="topnav__link{% if loop.first %} is-active{% endif %}" href="#{{ section.anchor }}" data-nav="{{ section.anchor }}">{{ section.label }}</a>
+      {% endfor %}
+    </nav>
+    <div class="topbar__right">
+      <span class="live-pill"><i class="live-pill__dot"></i>Live</span>
+      <span class="topbar__clock" id="clock">--:--:--</span>
+    </div>
+  </div>
+</header>
+
+<main class="shell">{% block content %}{% endblock %}</main>
+
+<!-- Entry ticket QR -->
+<div class="payment-modal" id="ticket-modal" hidden role="dialog" aria-modal="true" aria-labelledby="ticket-title">
+  <section class="profile-card">
+    <div class="profile-card__head"><div><span class="section-kicker">Entry ticket</span><h2 id="ticket-title">Scan at exit</h2></div><button type="button" class="page-btn" id="ticket-close">Close</button></div>
+    <div class="ticket">
+      <img id="ticket-qr" alt="Entry ticket QR code">
+      <p class="rate-panel__hint">This QR opens a page with the vehicle details — scan it with any phone camera. At the exit panel, paste the code (or scan it) to auto-fill the plate.</p>
+      <code id="ticket-code" class="ticket__code"></code>
+      <button type="button" class="page-btn" id="ticket-copy">Copy ticket code</button>
+      <a class="page-btn" id="ticket-open" href="#" target="_blank" rel="noopener" hidden>Open details page</a>
+    </div>
+  </section>
+</div>
+
+<footer class="foot">
+  <p>ParkFlow — Automated Parking &amp; Access Control.</p>
+</footer>
+
+<script src="{{ url_for('static', filename='js/app.js', v='20260927-open-kiosk') }}"></script>
+</body>
+</html>

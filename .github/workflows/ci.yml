@@ -1,4 +1,4 @@
-# SmartPark KE: CI (tests + secret scan) on every push/PR. No deployment.
+# ParkFlow: CI (tests + secret scan) on every push/PR. No deployment.
 name: CI
 
 on:
@@ -46,8 +46,6 @@ jobs:
       - name: Run regression tests
         env:
           PYTHONWARNINGS: ignore
-          ADMIN_USERNAME: manager
-          ADMIN_PASSWORD: manager123
           FLASK_SECRET_KEY: ci-only-secret
         run: python -m unittest discover -s tests -v
 

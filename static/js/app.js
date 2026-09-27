@@ -1,6 +1,34 @@
-/* app.js — SmartPark KE frontend for the Flask REST API (app.py). */
+/* app.js — ParkFlow frontend for the Flask REST API (app.py). */
 (function () {
   "use strict";
+
+  // byId returns the element or null when the current subpage does not have it.
+  function byId(id) { return document.getElementById(id); }
+  // onX binds a handler only when the element exists on the current subpage.
+  function onGet(id, event, handler) {
+    const node = byId(id);
+    if (node) node.addEventListener(event, handler);
+  }
+  function onAll(selector, event, handler) {
+    document.querySelectorAll(selector).forEach((node) => node.addEventListener(event, handler));
+  }
+  // These mutate one element; safe to call when it lives on another subpage.
+  function setText(id, value) {
+    const node = byId(id);
+    if (node) node.textContent = value;
+  }
+  function setHidden(id, value) {
+    const node = byId(id);
+    if (node) node.hidden = value;
+  }
+  function setValue(id, value) {
+    const node = byId(id);
+    if (node) node.value = value;
+  }
+  function setHtml(id, value) {
+    const node = byId(id);
+    if (node) node.innerHTML = value;
+  }
 
   let activeZone = "car";
   let pendingSession = null;
@@ -12,11 +40,16 @@
   const activityPageSize = 10;
   let paymentPollTimer = null;
   let paypalPending = null;
-  let currentUser = null;
+
+  // Server-owned copy of the "lot is full" wording, so the UI can never drift
+  // from what the API actually tells a driver.
+  const LOT_FULL_MESSAGE = "Parking is currently full, please try again later.";
 
   // Clock
   function tickClock() {
-    document.getElementById("clock").textContent =
+    const node = byId("clock");
+    if (!node) return;
+    node.textContent =
       new Date().toLocaleTimeString("en-KE", {
         timeZone: "Africa/Nairobi",
         hour: "numeric",
@@ -28,25 +61,9 @@
   setInterval(tickClock, 1000);
   tickClock();
 
-  const navigationLinks = [...document.querySelectorAll(".topnav__link")];
-  const navigationSections = navigationLinks
-    .map((link) => document.querySelector(link.getAttribute("href")))
-    .filter(Boolean);
-  if ("IntersectionObserver" in window) {
-    const navigationObserver = new IntersectionObserver((entries) => {
-      const visible = entries.filter((entry) => entry.isIntersecting)
-        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (!visible) return;
-      navigationLinks.forEach((link) => {
-        link.classList.toggle("is-active", link.getAttribute("href") === `#${visible.target.id}`);
-      });
-    }, { rootMargin: "-96px 0px -55% 0px", threshold: [0.1, 0.4, 0.8] });
-    navigationSections.forEach((section) => navigationObserver.observe(section));
-  }
-
   // Toasts
   function toast(message, type = "success") {
-    const stack = document.getElementById("toast-stack");
+    const stack = byId("toast-stack");
     const el = document.createElement("div");
     el.className = `toast toast--${type}`;
     const icon = type === "success"
@@ -61,10 +78,12 @@
   }
 
   // Barrier scene: arm lift + car drive-through (one orchestrated moment)
+  // No-op on subpages without the overview barrier scene.
   function playBarrierSequence(caption) {
-    const scene = document.getElementById("barrier");
-    const arm = document.getElementById("armGroup");
-    const captionEl = document.getElementById("barrier-caption");
+    const scene = byId("barrier");
+    const arm = byId("armGroup");
+    const captionEl = byId("barrier-caption");
+    if (!scene || !arm || !captionEl) return;
 
     clearTimeout(playBarrierSequence._drive);
     clearTimeout(playBarrierSequence._close);
@@ -107,8 +126,32 @@
       const data = await res.json();
       renderHero(data.stats);
       renderGrid(data.slots);
+      renderCapacity(data);
     } catch (e) {
       console.error("Failed to load slots", e);
+    }
+  }
+
+  // Full-lot state for the entry panel. available_total is the whole-lot
+  // figure from the server; at zero the entry door is shut and stays shut
+  // until a bay is released.
+  function renderCapacity(data) {
+    const banner = byId("lot-full");
+    const note = byId("capacity-note");
+    const submit = byId("entry-submit");
+    if (!banner && !note && !submit) return; // not on the entry subpage
+    const available = Number.isFinite(data.available_total)
+      ? data.available_total
+      : Object.values(data.stats || {}).reduce((sum, s) => sum + s.available, 0);
+    if (banner) banner.hidden = available !== 0;
+    if (note) {
+      note.textContent = available === 0
+        ? "No bays free right now."
+        : `${available} ${available === 1 ? "bay" : "bays"} free right now.`;
+    }
+    if (submit) {
+      submit.disabled = available === 0;
+      submit.title = available === 0 ? LOT_FULL_MESSAGE : "";
     }
   }
 
@@ -122,151 +165,11 @@
     }
   }
 
-  async function refreshAuth() {
-    try {
-      const response = await fetch("/api/auth/me");
-      const data = await response.json();
-      currentUser = data.user;
-      document.getElementById("auth-btn").textContent = currentUser ? `Sign out (${currentUser.username})` : "Sign in";
-      document.getElementById("profile-btn").hidden = !currentUser;
-      if (currentUser) setDashboardAccess(true);
-      else showLoginModal();
-    } catch (error) {
-      currentUser = null;
-      document.getElementById("auth-btn").textContent = "Sign in";
-      showLoginModal();
-    }
-  }
-
-  function showLoginModal() {
-    setDashboardAccess(false);
-    document.getElementById("login-modal").hidden = false;
-    document.getElementById("login-close").hidden = true;
-    document.querySelector("#login-form input[name=username]").focus();
-  }
-
-  function setDashboardAccess(authenticated) {
-    document.querySelector("main.shell").hidden = !authenticated;
-    document.querySelector(".foot").hidden = !authenticated;
-    document.getElementById("profile-btn").hidden = !authenticated;
-    if (authenticated) return;
-    document.getElementById("stat-available").textContent = "0";
-    document.getElementById("stat-breakdown").replaceChildren();
-    document.getElementById("slot-grid").replaceChildren();
-    document.getElementById("rates-list").replaceChildren();
-    document.getElementById("activity-list").innerHTML = '<p class="activity__empty">Sign in to view activity.</p>';
-    activitySessions = [];
-  }
-
-  document.getElementById("auth-btn").addEventListener("click", async () => {
-    if (!currentUser) {
-      showLoginModal();
-      return;
-    }
-    await fetch("/api/auth/logout", { method: "POST" });
-    currentUser = null;
-    document.getElementById("auth-btn").textContent = "Sign in";
-    setDashboardAccess(false);
-    showLoginModal();
-    toast("Signed out.", "success");
-  });
-
-  document.getElementById("login-close").addEventListener("click", () => {
-    document.getElementById("login-modal").hidden = true;
-  });
-
-  document.getElementById("login-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const response = await fetch("/api/auth/login", {
-      method: "POST", headers: jsonHeaders(),
-      body: JSON.stringify({ username: form.username.value, password: form.password.value }),
-    });
-    const data = await response.json();
-    if (!data.ok) {
-      toast(data.error, "error");
-      return;
-    }
-    currentUser = data.user;
-    setDashboardAccess(true);
-    document.getElementById("login-modal").hidden = true;
-    document.getElementById("auth-btn").textContent = `Sign out (${currentUser.username})`;
-    document.getElementById("profile-btn").hidden = false;
-    document.getElementById("login-close").hidden = false;
-    toast("Signed in successfully.", "success");
-  });
-
-  document.querySelectorAll(".report-btn").forEach((link) => {
-    link.addEventListener("click", (event) => {
-      if (!currentUser) {
-        event.preventDefault();
-        showLoginModal();
-      }
-    });
-  });
-
-  document.getElementById("profile-btn").addEventListener("click", async () => {
-    await loadProfile();
-    document.getElementById("profile-modal").hidden = false;
-  });
-  document.getElementById("profile-close").addEventListener("click", () => {
-    document.getElementById("profile-modal").hidden = true;
-  });
-
-  async function loadProfile() {
-    const response = await fetch("/api/profile");
-    if (response.status === 401) {
-      currentUser = null;
-      setDashboardAccess(false);
-      showLoginModal();
-      return;
-    }
-    const data = await response.json();
-    if (!data.user) return;
-    document.getElementById("profile-username").value = data.user.username;
-    document.getElementById("profile-sessions").innerHTML = data.sessions.map((item) => {
-      const revoked = item.revoked;
-      const current = item.current;
-      const label = current ? "This session" : (revoked ? "Revoked" : "Revoke");
-      return `<div class="profile-session"><div><strong>${escapeHtml(item.user_agent || "Browser session")}${current ? " · this browser" : ""}</strong><span>${escapeHtml(item.last_seen)}${revoked ? " · revoked" : ""}</span></div><button class="page-btn" data-session-id="${item.id}" ${revoked || current ? "disabled" : ""}>${label}</button></div>`;
-    }).join("");
-    document.querySelectorAll("#profile-sessions [data-session-id]").forEach((button) => button.addEventListener("click", async () => {
-      button.disabled = true;
-      try {
-        const revokeResponse = await fetch(`/api/profile/sessions/${button.dataset.sessionId}`, { method: "DELETE" });
-        const revokeData = await revokeResponse.json().catch(() => ({}));
-        if (!revokeResponse.ok || !revokeData.ok) {
-          toast(revokeData.error || "Could not revoke that session.", "error");
-          button.disabled = false;
-          return;
-        }
-        toast("Session revoked.", "success");
-      } catch (error) {
-        console.error("Revoke session failed", error);
-        toast("Could not revoke that session.", "error");
-        button.disabled = false;
-        return;
-      }
-      loadProfile();
-    }));
-  }
-
-  document.getElementById("profile-form").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const response = await fetch("/api/profile", { method: "PUT", headers: jsonHeaders(), body: JSON.stringify(Object.fromEntries(new FormData(form))) });
-    const data = await response.json();
-    if (!data.ok) { toast(data.error, "error"); return; }
-    currentUser.username = data.username;
-    document.getElementById("auth-btn").textContent = `Sign out (${data.username})`;
-    toast("Account details updated.", "success");
-    form.reset();
-    document.getElementById("profile-username").value = data.username;
-  });
-
   function renderRates(rates, vatRate) {
-    if (vatRate != null) document.getElementById("vat-rate").value = vatRate;
-    document.getElementById("rates-list").innerHTML = rates.map((rate, index) => {
+    // No-op on subpages without the rates panel.
+    if (!byId("rates-list")) return;
+    setValue("vat-rate", vatRate != null ? vatRate : byId("vat-rate").value);
+    setHtml("rates-list", rates.map((rate, index) => {
       const isFinal = rate.max_minutes >= 2147483647;
       return `<div class="rate-row">
         <span class="rate-row__step">${String(index + 1).padStart(2, "0")}</span>
@@ -278,16 +181,16 @@
         </label>
         <span class="rate-row__caption">${isFinal ? "Longest-stay rate" : "Up to this duration"}</span>
       </div>`;
-    }).join("");
+    }).join(""));
   }
 
-  document.getElementById("save-rates").addEventListener("click", async () => {
-    const button = document.getElementById("save-rates");
+  onGet("save-rates", "click", async () => {
+    const button = byId("save-rates");
     const rates = [...document.querySelectorAll(".rate-row")].map((row) => ({
       max_minutes: row.querySelector(".rate-limit").value,
       fee_amount: row.querySelector(".rate-fee").value,
     }));
-    const vatRate = document.getElementById("vat-rate").value;
+    const vatRate = byId("vat-rate").value;
     button.disabled = true;
     try {
       const res = await fetch("/api/rates", { method: "PUT", headers: jsonHeaders(), body: JSON.stringify({ rates, vat_rate: vatRate }) });
@@ -306,8 +209,10 @@
   });
 
   function renderHero(stats) {
+    // No-op on subpages without the hero counters.
+    const breakdown = byId("stat-breakdown");
+    if (!breakdown) return;
     let totalAvail = 0;
-    const breakdown = document.getElementById("stat-breakdown");
     breakdown.innerHTML = "";
     Object.entries(stats).forEach(([type, s]) => {
       totalAvail += s.available;
@@ -316,14 +221,16 @@
       row.innerHTML = `<span>${capitalize(type)}</span><b>${s.available} / ${s.total} free</b>`;
       breakdown.appendChild(row);
     });
-    const el = document.getElementById("stat-available");
+    const el = byId("stat-available");
     const prev = lastAvailable === null ? totalAvail : lastAvailable;
     animateCount(el, prev, totalAvail);
     lastAvailable = totalAvail;
   }
 
   function renderGrid(slots) {
-    const grid = document.getElementById("slot-grid");
+    // No-op on subpages without the slot map.
+    const grid = byId("slot-grid");
+    if (!grid) return;
     const visible = slots.filter((s) => s.vehicle_type === activeZone);
     const isFirstRender = grid.childElementCount === 0;
 
@@ -346,7 +253,7 @@
     });
   }
 
-  document.getElementById("zone-tabs").addEventListener("click", (e) => {
+  onGet("zone-tabs", "click", (e) => {
     const btn = e.target.closest(".tab");
     if (!btn) return;
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("is-active"));
@@ -389,14 +296,16 @@
   }
 
   function renderActivity() {
-    const list = document.getElementById("activity-list");
-    const range = document.getElementById("activity-range");
-    const pageLabel = document.getElementById("activity-page");
-    const previous = document.getElementById("activity-prev");
-    const next = document.getElementById("activity-next");
-    const search = document.getElementById("activity-search").value.trim().toLowerCase();
-    const sortBy = document.getElementById("activity-sort").value;
-    const order = document.getElementById("activity-order").value === "asc" ? 1 : -1;
+    // No-op on subpages without the activity feed.
+    const list = byId("activity-list");
+    if (!list) return;
+    const range = byId("activity-range");
+    const pageLabel = byId("activity-page");
+    const previous = byId("activity-prev");
+    const next = byId("activity-next");
+    const search = byId("activity-search").value.trim().toLowerCase();
+    const sortBy = byId("activity-sort").value;
+    const order = byId("activity-order").value === "asc" ? 1 : -1;
     const filtered = activitySessions
       .filter((s) => [s.vehicle, s.slot_number, s.status, s.entry_time, s.exit_time]
         .some((value) => String(value || "").toLowerCase().includes(search)))
@@ -460,29 +369,27 @@
   }
 
   ["activity-search", "activity-sort", "activity-order"].forEach((id) => {
-    document.getElementById(id).addEventListener("input", () => { activityPage = 1; renderActivity(); });
-    document.getElementById(id).addEventListener("change", () => { activityPage = 1; renderActivity(); });
+    const node = byId(id);
+    if (!node) return;
+    node.addEventListener("input", () => { activityPage = 1; renderActivity(); });
+    node.addEventListener("change", () => { activityPage = 1; renderActivity(); });
   });
 
-  document.getElementById("activity-prev").addEventListener("click", () => {
+  onGet("activity-prev", "click", () => {
     if (activityPage > 1) { activityPage -= 1; renderActivity(); }
   });
-  document.getElementById("activity-next").addEventListener("click", () => {
+  onGet("activity-next", "click", () => {
     activityPage += 1;
     renderActivity();
   });
 
   // Attendant tools: trie plate search
-  document.getElementById("plate-search").addEventListener("click", async () => {
-    const prefix = document.getElementById("plate-prefix").value.trim();
-    const box = document.getElementById("plate-results");
+  onGet("plate-search", "click", async () => {
+    const prefix = byId("plate-prefix").value.trim();
+    const box = byId("plate-results");
     if (!prefix) { toast("Type a plate prefix (e.g. KDA).", "error"); return; }
     try {
       const res = await fetch(`/api/plates?prefix=${encodeURIComponent(prefix)}`);
-      if (res.status === 401 || res.status === 403) {
-        toast("Sign in as manager to search plates.", "error");
-        return;
-      }
       const data = await res.json();
       if (!data.ok) { toast(data.error, "error"); return; }
       box.hidden = false;
@@ -493,81 +400,6 @@
       toast("Plate search failed.", "error");
     }
   });
-
-  // Attendant tools: maintenance + barrier override
-  async function postOverride(url, payload, successMessage) {
-    try {
-      const res = await fetch(url, { method: "POST", headers: jsonHeaders(), body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (res.status === 401 || res.status === 403) {
-        toast("Manager sign-in required for overrides.", "error");
-        playChime("error");
-        return;
-      }
-      if (!data.ok) { toast(data.error, "error"); playChime("error"); return; }
-      toast(successMessage, "success");
-      playChime("success");
-      refreshSlots();
-    } catch (err) {
-      toast("Override failed — is the server running?", "error");
-      playChime("error");
-    }
-  }
-  document.getElementById("maintenance-off").addEventListener("click", () => {
-    const slot = document.getElementById("maintenance-slot").value;
-    const reason = document.getElementById("maintenance-reason").value.trim();
-    if (!slot || !reason) { toast("Slot number and reason are required.", "error"); return; }
-    postOverride(`/api/slots/${slot}/maintenance`, { out_of_service: true, reason }, `Slot ${slot} marked out of service.`);
-  });
-  document.getElementById("maintenance-on").addEventListener("click", () => {
-    const slot = document.getElementById("maintenance-slot").value;
-    const reason = document.getElementById("maintenance-reason").value.trim();
-    if (!slot || !reason) { toast("Slot number and reason are required.", "error"); return; }
-    postOverride(`/api/slots/${slot}/maintenance`, { out_of_service: false, reason }, `Slot ${slot} back in service.`);
-  });
-  document.getElementById("override-open").addEventListener("click", () => {
-    const sessionId = document.getElementById("override-session").value;
-    const reason = document.getElementById("override-reason").value.trim();
-    if (!sessionId || !reason) { toast("Session ID and reason are required.", "error"); return; }
-    postOverride("/api/barrier/override", { session_id: sessionId, reason }, "Barrier open signal sent (audited).");
-  });
-
-  // Analytics (manager)
-  async function loadAnalytics() {
-    try {
-      const res = await fetch("/api/analytics");
-      if (res.status === 401 || res.status === 403) return; // section stays empty
-      const data = await res.json();
-      if (!data.ok) return;
-      const a = data.analytics;
-      document.getElementById("analytics-window").textContent =
-        `Last ${a.window_days} days · KES ${a.total_revenue} total${data.overstays ? ` · ${data.overstays} overstay alert${data.overstays > 1 ? "s" : ""}` : ""}`;
-      const dayMax = Math.max(1, ...a.revenue_by_day.map((d) => d.amount));
-      const hourMax = Math.max(1, ...a.revenue_by_hour_today.map((d) => d.amount));
-      const bar = (label, value, max, caption) =>
-        `<div class="analytics__row"><span class="analytics__label">${label}</span>
-           <span class="analytics__bar"><i style="width:${Math.round((value / max) * 100)}%"></i></span>
-           <span class="analytics__value">${caption}</span></div>`;
-      document.getElementById("analytics-grid").innerHTML = `
-        <div class="panel card"><h3>Revenue by day</h3>
-          ${a.revenue_by_day.length ? a.revenue_by_day.map((d) => bar(d.date, d.amount, dayMax, `KES ${d.amount}`)).join("") : '<p class="activity__empty">No paid sessions in this window.</p>'}
-        </div>
-        <div class="panel card"><h3>Revenue by hour (today)</h3>
-          ${a.revenue_by_hour_today.length ? a.revenue_by_hour_today.map((d) => bar(`${String(d.hour).padStart(2, "0")}:00`, d.amount, hourMax, `KES ${d.amount}`)).join("") : '<p class="activity__empty">No payments yet today.</p>'}
-        </div>
-        <div class="panel card"><h3>Occupancy by zone</h3>
-          ${a.occupancy_by_zone.map((z) => `<div class="plate-results__row"><strong>Zone ${escapeHtml(z.zone)}</strong><span>${z.occupied} occupied · ${z.available} free${z.maintenance ? ` · ${z.maintenance} out of service` : ""} · ${Math.round(z.utilization * 100)}% full</span></div>`).join("")}
-        </div>
-        <div class="panel card"><h3>Insights</h3>
-          <div class="plate-results__row"><strong>Busiest zone</strong><span>${a.busiest_zone ? `Zone ${escapeHtml(a.busiest_zone.zone)} (${a.busiest_zone.sessions} sessions)` : "—"}</span></div>
-          ${a.revenue_by_method.map((m) => `<div class="plate-results__row"><strong>${escapeHtml(m.method)}</strong><span>KES ${m.amount}</span></div>`).join("")}
-          ${a.avg_duration_by_zone.map((z) => `<div class="plate-results__row"><strong>Zone ${escapeHtml(z.zone)} avg stay</strong><span>${z.avg_minutes} min</span></div>`).join("")}
-        </div>`;
-    } catch (err) {
-      console.error("Analytics load failed", err);
-    }
-  }
-  loadAnalytics();
 
   // Sound cues (WebAudio — no assets needed)
   let audioCtx = null;
@@ -598,17 +430,20 @@
   function showEntryTicket(data) {
     lastTicketCode = data.ticket_code || "";
     if (!lastTicketCode) return;
-    document.getElementById("ticket-qr").src = data.ticket_qr;
-    document.getElementById("ticket-code").textContent = lastTicketCode;
-    const openLink = document.getElementById("ticket-open");
-    if (data.ticket_url) { openLink.href = data.ticket_url; openLink.hidden = false; }
-    else { openLink.hidden = true; }
-    document.getElementById("ticket-modal").hidden = false;
+    const qr = byId("ticket-qr");
+    if (qr) qr.src = data.ticket_qr;
+    setText("ticket-code", lastTicketCode);
+    const openLink = byId("ticket-open");
+    if (openLink) {
+      if (data.ticket_url) { openLink.href = data.ticket_url; openLink.hidden = false; }
+      else { openLink.hidden = true; }
+    }
+    setHidden("ticket-modal", false);
   }
-  document.getElementById("ticket-close").addEventListener("click", () => {
-    document.getElementById("ticket-modal").hidden = true;
+  onGet("ticket-close", "click", () => {
+    setHidden("ticket-modal", true);
   });
-  document.getElementById("ticket-copy").addEventListener("click", async () => {
+  onGet("ticket-copy", "click", async () => {
     try {
       await navigator.clipboard.writeText(lastTicketCode);
       toast("Ticket code copied.", "success");
@@ -617,9 +452,11 @@
     }
   });
 
-  // Exit: ticket code -> plate
-  document.getElementById("use-ticket").addEventListener("click", async () => {
-    const input = document.getElementById("ticket-code");
+  // Exit: ticket code -> plate. NB the input is #exit-ticket-code; #ticket-code
+  // is the read-only <code> in the entry-ticket modal, which showEntryTicket
+  // fills in — sharing one id would make byId() return the wrong element.
+  onGet("use-ticket", "click", async () => {
+    const input = byId("exit-ticket-code");
     const code = input.value.trim();
     if (!code) { toast("Paste or scan a ticket code first.", "error"); return; }
     try {
@@ -636,9 +473,16 @@
     }
   });
 
+  // After a successful entry from another subpage, the barrier scene and the
+  // exit panel live elsewhere, so hand the driver the ticket details to scan.
+  function maybePromptExit() {
+    if (byId("exit-form") || !lastTicketCode) return;
+    toast(`Checked in — scan this ticket at the exit panel: ${lastTicketCode}`, "success");
+  }
+
   // Entry form
-  const entryForm = document.getElementById("entry-form");
-  entryForm.addEventListener("submit", async (e) => {
+  const entryForm = byId("entry-form");
+  if (entryForm) entryForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = e.target;
     const submitBtn = form.querySelector("button[type=submit]");
@@ -652,8 +496,10 @@
       const res = await fetch("/api/entry", { method: "POST", headers: jsonHeaders(), body: JSON.stringify(payload) });
       const data = await res.json();
       if (!data.ok) {
-        toast(data.error, "error");
+        // A full lot always reads the same way, whatever the API reported.
+        toast(data.full ? LOT_FULL_MESSAGE : data.error, "error");
         playChime("error");
+        if (data.full) refreshSlots();
         return;
       }
       toast(`${data.session.vehicle} checked in — slot ${data.session.slot_number}.`, "success");
@@ -663,6 +509,7 @@
       form.reset();
       refreshSlots();
       refreshActivity();
+      maybePromptExit();
     } catch (err) {
       toast("Network error — is the server running?", "error");
     } finally {
@@ -671,13 +518,13 @@
   });
 
   // Exit form
-  const exitForm = document.getElementById("exit-form");
-  exitForm.addEventListener("submit", async (e) => {
+  const exitForm = byId("exit-form");
+  if (exitForm) exitForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const form = e.target;
     const submitBtn = form.querySelector("button[type=submit]");
     const plate = form.plate_number.value;
-    document.getElementById("fee-box").hidden = true;
+    setHidden("fee-box", true);
     submitBtn.disabled = true;
 
     try {
@@ -699,14 +546,14 @@
         return;
       }
       pendingSession = s;
-      document.getElementById("fee-duration").textContent = `${s.duration_minutes} min`;
-      document.getElementById("fee-subtotal").textContent = `KES ${s.subtotal_amount ?? s.fee_charged}`;
-      document.getElementById("fee-vat-rate").textContent = s.vat_rate ?? 0;
-      document.getElementById("fee-vat").textContent = `KES ${s.vat_amount ?? 0}`;
-      document.getElementById("fee-amount").textContent = `KES ${s.total_amount ?? s.fee_charged}`;
-      document.getElementById("stk-phone").textContent = s.owner_phone || "—";
-      document.getElementById("stk-phone-row").hidden = selectedMethod !== "mpesa";
-      document.getElementById("fee-box").hidden = false;
+      setText("fee-duration", `${s.duration_minutes} min`);
+      setText("fee-subtotal", `KES ${s.subtotal_amount ?? s.fee_charged}`);
+      setText("fee-vat-rate", s.vat_rate ?? 0);
+      setText("fee-vat", `KES ${s.vat_amount ?? 0}`);
+      setText("fee-amount", `KES ${s.total_amount ?? s.fee_charged}`);
+      setText("stk-phone", s.owner_phone || "—");
+      setHidden("stk-phone-row", selectedMethod !== "mpesa");
+      setHidden("fee-box", false);
     } catch (err) {
       toast("Network error — is the server running?", "error");
     } finally {
@@ -714,7 +561,7 @@
     }
   });
 
-  document.getElementById("fee-methods").addEventListener("click", (e) => {
+  onGet("fee-methods", "click", (e) => {
     const chip = e.target.closest(".chip");
     if (!chip) return;
     document.querySelectorAll("#fee-methods .chip").forEach((c) => c.classList.remove("is-active"));
@@ -722,7 +569,7 @@
     selectedMethod = chip.dataset.method;
     updatePaymentActionLabel();
     if (pendingSession) {
-      document.getElementById("stk-phone-row").hidden = selectedMethod !== "mpesa";
+      setHidden("stk-phone-row", selectedMethod !== "mpesa");
     }
   });
 
@@ -732,10 +579,10 @@
       cash: "Confirm cash payment & lift barrier",
       card: "Open PayPal & pay",
     };
-    document.getElementById("pay-btn-label").textContent = labels[selectedMethod];
+    setText("pay-btn-label", labels[selectedMethod]);
   }
 
-  document.getElementById("pay-btn").addEventListener("click", async (e) => {
+  onGet("pay-btn", "click", async (e) => {
     if (!pendingSession) return;
     const btn = e.currentTarget;
     btn.disabled = true;
@@ -751,14 +598,14 @@
         return;
       }
       if (selectedMethod === "mpesa") {
-        document.getElementById("fee-box").hidden = true;
+        setHidden("fee-box", true);
         showPaymentModal("waiting");
         pollPaymentStatus(pendingSession.id);
         return;
       }
       if (selectedMethod === "card") {
         paypalPending = { sessionId: pendingSession.id, orderId: data.payment.order_id };
-        document.getElementById("fee-box").hidden = true;
+        setHidden("fee-box", true);
         showPaymentModal("paypal", `Approve the PayPal payment in the new window, then return here.`);
         window.open(data.payment.approval_url, "_blank", "noopener");
         return;
@@ -769,8 +616,8 @@
       toast(`${paymentMessage} — safe travels!`, "success");
       showReceipt(data.receipt);
       playBarrierSequence("Exiting — safe travels");
-      document.getElementById("fee-box").hidden = true;
-      exitForm.reset();
+      setHidden("fee-box", true);
+      if (exitForm) exitForm.reset();
       pendingSession = null;
       refreshSlots();
       refreshActivity();
@@ -782,11 +629,11 @@
   });
 
   function showPaymentModal(state, message) {
-    const modal = document.getElementById("payment-modal");
-    const icon = document.getElementById("payment-modal-icon");
-    const title = document.getElementById("payment-modal-title");
-    const detail = document.getElementById("payment-modal-message");
-    const close = document.getElementById("payment-modal-close");
+    const modal = byId("payment-modal");
+    const icon = byId("payment-modal-icon");
+    const title = byId("payment-modal-title");
+    const detail = byId("payment-modal-message");
+    const close = byId("payment-modal-close");
     modal.hidden = false;
     close.hidden = state === "waiting";
     close.textContent = state === "paypal" ? "I approved PayPal - check payment" : "Close";
@@ -811,12 +658,12 @@
 
   function closePaymentModal() {
     clearTimeout(paymentPollTimer);
-    document.getElementById("payment-modal").hidden = true;
+    setHidden("payment-modal", true);
   }
 
   async function capturePayPalPayment() {
     if (!paypalPending) return;
-    const close = document.getElementById("payment-modal-close");
+    const close = byId("payment-modal-close");
     close.disabled = true;
     close.textContent = "Checking PayPal...";
     try {
@@ -833,7 +680,7 @@
       showReceipt(data.receipt);
       paypalPending = null;
       pendingSession = null;
-      exitForm.reset();
+      if (exitForm) exitForm.reset();
       refreshSlots();
       refreshActivity();
     } catch (error) {
@@ -856,7 +703,7 @@
         playBarrierSequence("Payment confirmed — exiting");
         showReceipt(data.receipt);
         pendingSession = null;
-        exitForm.reset();
+        if (exitForm) exitForm.reset();
         refreshSlots();
         refreshActivity();
         return;
@@ -867,7 +714,7 @@
     }
   }
 
-  document.getElementById("payment-modal-close").addEventListener("click", () => {
+  onGet("payment-modal-close", "click", () => {
     if (paypalPending) capturePayPalPayment();
     else closePaymentModal();
   });
@@ -896,30 +743,73 @@
       ["Amount paid", `${receipt.currency} ${receipt.total_amount}`],
       ["Method of payment", receipt.payment_method],
     ];
-    document.getElementById("receipt-number").textContent = receipt.receipt_number;
-    document.getElementById("receipt-business-name").textContent = receipt.business_name;
-    document.getElementById("receipt-business-details").textContent = [receipt.business_address, receipt.kra_pin ? `KRA PIN: ${receipt.kra_pin}` : ""].filter(Boolean).join(" | ");
-    document.getElementById("receipt-details").innerHTML = details.map(([label, value]) =>
-      `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
-    document.getElementById("receipt-verified").textContent = receipt.verified ? "Verified payment" : "Unverified";
-    document.getElementById("receipt-qr").src = receipt.qr_code;
-    document.getElementById("receipt-modal").hidden = false;
+    setText("receipt-number", receipt.receipt_number);
+    setText("receipt-business-name", receipt.business_name);
+    setText("receipt-business-details", [receipt.business_address, receipt.kra_pin ? `KRA PIN: ${receipt.kra_pin}` : ""].filter(Boolean).join(" | "));
+    setHtml("receipt-details", details.map(([label, value]) =>
+      `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join(""));
+    setText("receipt-verified", receipt.verified ? "Verified payment" : "Unverified");
+    const qr = byId("receipt-qr");
+    if (qr) qr.src = receipt.qr_code;
+    setHidden("receipt-modal", false);
   }
 
-  document.getElementById("receipt-close").addEventListener("click", () => {
-    document.getElementById("receipt-modal").hidden = true;
+  onGet("receipt-close", "click", () => {
+    setHidden("receipt-modal", true);
   });
-  document.getElementById("receipt-print").addEventListener("click", () => window.print());
+  onGet("receipt-print", "click", () => window.print());
 
   // Helpers
   function jsonHeaders() { return { "Content-Type": "application/json" }; }
   function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
+  // Top bar: the kiosk is ONE page, so a nav link just scrolls to its own
+  // section. The active link then follows the attendant down the page.
+  (function initSectionNav() {
+    const links = Array.from(document.querySelectorAll(".topnav__link"));
+    const sections = links
+      .map((link) => document.getElementById(link.dataset.nav))
+      .filter(Boolean);
+    if (!sections.length) return; // no top bar (e.g. the public scan pages)
+
+    function markActive(anchor) {
+      links.forEach((link) => {
+        link.classList.toggle("is-active", link.dataset.nav === anchor);
+      });
+    }
+
+    links.forEach((link) => {
+      link.addEventListener("click", () => markActive(link.dataset.nav));
+    });
+
+    // Highlight whichever section owns the reading line, so scrolling by hand
+    // keeps the top bar in step. rAF-throttled: scroll fires far too often.
+    let queued = false;
+    window.addEventListener("scroll", () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        const line = window.scrollY + window.innerHeight * 0.35;
+        let current = sections[0];
+        sections.forEach((section) => {
+          if (section.offsetTop <= line) current = section;
+        });
+        markActive(current.id);
+      });
+    }, { passive: true });
+
+    // Opening /#slots must land on the Slots link, not on Overview.
+    const hash = window.location.hash.slice(1);
+    if (hash && document.getElementById(hash)) markActive(hash);
+  })();
+
   // Boot
+  // One page carries every panel, so nothing needs a sign-in step.
   refreshSlots();
-  refreshAuth();
   refreshRates();
   refreshActivity();
+  // Polled panels re-poll on a timer; empty timer calls no-op via their guards.
   setInterval(refreshSlots, 4000);
   setInterval(refreshActivity, 6000);
 })();

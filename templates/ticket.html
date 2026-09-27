@@ -95,7 +95,7 @@
     {% if receipt.business_address or receipt.kra_pin %}
       <p class="note">{{ receipt.business_address }}{% if receipt.business_address and receipt.kra_pin %} &middot; {% endif %}{% if receipt.kra_pin %}KRA PIN: {{ receipt.kra_pin }}{% endif %}</p>
     {% endif %}
-    <p class="note">This receipt is confirmed directly from the SmartPark payment record.</p>
+    <p class="note">This receipt is confirmed directly from the ParkFlow payment record.</p>
 
   {% else %}
     <h1 class="sheet__title">Vehicle pass</h1>
