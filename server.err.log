@@ -2856,3 +2856,273 @@ INFO:parkflow:request_id=93fbba65b4bd22a0 method=GET path=/api/activity status=2
 INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:02] "GET /api/activity HTTP/1.1" 200 -
 INFO:parkflow:request_id=adc3fe67e81b59a5 method=GET path=/api/slots status=200 duration_ms=4.2
 INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:04] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=83e6eb47543590f9 method=GET path=/api/activity status=200 duration_ms=2.8
+INFO:parkflow:request_id=ae7bf3367f876bb8 method=GET path=/api/slots status=200 duration_ms=5.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:08] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:08] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=db67efa3465f7ec3 method=GET path=/api/slots status=200 duration_ms=6.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:12] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=132ba2ae54545310 method=GET path=/api/activity status=200 duration_ms=2.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:14] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=a02aa88165df0bfc method=GET path=/api/slots status=200 duration_ms=5.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:16] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=183db7e4555b7850 method=GET path=/api/activity status=200 duration_ms=2.5
+INFO:parkflow:request_id=8096aefeaec9a0f7 method=GET path=/api/slots status=200 duration_ms=5.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:20] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:20] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=56c646df6b59f073 method=GET path=/api/slots status=200 duration_ms=3.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:24] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=7af94dba6d9d98a8 method=GET path=/api/activity status=200 duration_ms=3.0
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:26] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=fde447fe99dd54b5 method=GET path=/api/slots status=200 duration_ms=6.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:28] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=6edb7d407e909fb3 method=GET path=/api/activity status=200 duration_ms=3.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:32] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=eeb0bedfb2925a00 method=GET path=/api/slots status=200 duration_ms=7.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:32] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=a161fddbda1284fc method=GET path=/api/activity status=200 duration_ms=2.3
+INFO:parkflow:request_id=313f8221ca23e164 method=GET path=/api/slots status=200 duration_ms=7.5
+INFO:parkflow:request_id=5b7656376c6784d3 method=GET path=/api/slots status=200 duration_ms=5.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:43:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=6a9f404049e55698 method=GET path=/api/activity status=200 duration_ms=3.2
+INFO:parkflow:request_id=8e59441b2f340a73 method=GET path=/api/slots status=200 duration_ms=6.7
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:44:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:44:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=5e3198509bb0acc8 method=GET path=/api/activity status=200 duration_ms=2.7
+INFO:parkflow:request_id=33364fd28d761a82 method=GET path=/api/slots status=200 duration_ms=4.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:44:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:44:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=0826695f69a1346a method=GET path=/api/activity status=200 duration_ms=5.0
+INFO:parkflow:request_id=4cc72d15c067ee30 method=GET path=/api/activity status=200 duration_ms=2.6
+INFO:parkflow:request_id=de5fb1841fec04b9 method=GET path=/api/slots status=200 duration_ms=5.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:45:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:45:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:45:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=00707df773b954d3 method=GET path=/api/slots status=200 duration_ms=6.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:45:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=3f64d542bc9e0e69 method=GET path=/api/activity status=200 duration_ms=3.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:46:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=9a724cf52c87a299 method=GET path=/api/slots status=200 duration_ms=7.2
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:46:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=dac56181f8e0b8fd method=GET path=/api/activity status=200 duration_ms=4.6
+INFO:parkflow:request_id=beae5c45ceb8932b method=GET path=/api/slots status=200 duration_ms=8.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:46:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:46:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=8514967f930d534e method=GET path=/api/activity status=200 duration_ms=5.3
+INFO:parkflow:request_id=62672879996dab7e method=GET path=/api/activity status=200 duration_ms=2.3
+INFO:parkflow:request_id=309756b5084e1c6a method=GET path=/api/slots status=200 duration_ms=6.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:47:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:47:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:47:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=4978367e015ef618 method=GET path=/api/slots status=200 duration_ms=5.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:47:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=1fb6ad9e17e86ff5 method=GET path=/api/activity status=200 duration_ms=2.1
+INFO:parkflow:request_id=99140338b7d81518 method=GET path=/api/slots status=200 duration_ms=4.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:48:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:48:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=6155605bb62c0cf7 method=GET path=/api/activity status=200 duration_ms=3.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:48:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=7d754d03c637bfad method=GET path=/api/slots status=200 duration_ms=9.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:48:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=2afb10436c9b9f95 method=GET path=/api/activity status=200 duration_ms=5.0
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:49:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=cc63d57a127cca94 method=GET path=/api/activity status=200 duration_ms=3.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:49:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=944a25a6c7adf6a6 method=GET path=/api/slots status=200 duration_ms=8.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:49:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=fd0d8425dae878e6 method=GET path=/api/slots status=200 duration_ms=3.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:49:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=bb771455c5120145 method=GET path=/api/activity status=200 duration_ms=2.1
+INFO:parkflow:request_id=2b726ded25c575ab method=GET path=/api/slots status=200 duration_ms=4.7
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:50:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:50:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=0a926fbde1fc5d97 method=GET path=/api/activity status=200 duration_ms=3.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:50:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=096e617fa6093e8b method=GET path=/api/slots status=200 duration_ms=9.2
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:50:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=da7299a9872b04f5 method=GET path=/api/activity status=200 duration_ms=6.2
+INFO:parkflow:request_id=18ed5068028cca7a method=GET path=/api/activity status=200 duration_ms=4.9
+INFO:parkflow:request_id=36e50be7753491d8 method=GET path=/api/slots status=200 duration_ms=8.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:51:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:51:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:51:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=c63ccbe2e6b10bc4 method=GET path=/api/slots status=200 duration_ms=3.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:51:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=33415bfe4872eada method=GET path=/api/activity status=200 duration_ms=2.1
+INFO:parkflow:request_id=b7988908e54c3bf7 method=GET path=/api/slots status=200 duration_ms=4.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:52:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:52:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=9ddb4c87e48e003d method=GET path=/api/activity status=200 duration_ms=3.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:52:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=131295e58ae69a0d method=GET path=/api/slots status=200 duration_ms=6.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:52:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=366b633d635a1dbf method=GET path=/api/activity status=200 duration_ms=6.3
+INFO:parkflow:request_id=88cbdb86b5b35564 method=GET path=/api/activity status=200 duration_ms=5.4
+INFO:parkflow:request_id=c08f3e6489ed693b method=GET path=/api/slots status=200 duration_ms=9.0
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:53:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:53:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:53:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=49a9f284bf3e1bc6 method=GET path=/api/slots status=200 duration_ms=6.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:53:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=bd6081787e2ee4c3 method=GET path=/api/activity status=200 duration_ms=2.1
+INFO:parkflow:request_id=a8e2f4206d3e808b method=GET path=/api/slots status=200 duration_ms=5.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:54:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:54:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=1698e70720f71f68 method=GET path=/api/activity status=200 duration_ms=4.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:54:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=185281f6a84fcc12 method=GET path=/api/slots status=200 duration_ms=8.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:54:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=0971c8e7eea05dcb method=GET path=/api/activity status=200 duration_ms=4.3
+INFO:parkflow:request_id=3dcf188252f96d46 method=GET path=/api/activity status=200 duration_ms=3.2
+INFO:parkflow:request_id=d35ba63b2ee1bb5d method=GET path=/api/slots status=200 duration_ms=5.7
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:55:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:55:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:55:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=9bad0892940ed55e method=GET path=/api/slots status=200 duration_ms=6.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:55:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=65f73214b061df0b method=GET path=/api/activity status=200 duration_ms=2.4
+INFO:parkflow:request_id=a1144bc542f9b70f method=GET path=/api/slots status=200 duration_ms=5.2
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:56:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:56:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=b81ba3c984a38439 method=GET path=/api/activity status=200 duration_ms=2.1
+INFO:parkflow:request_id=e5f2c71fe11b8e15 method=GET path=/api/slots status=200 duration_ms=4.0
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:56:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:56:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=d541e8100159b8a8 method=GET path=/api/activity status=200 duration_ms=2.9
+INFO:parkflow:request_id=a682984701eab2ff method=GET path=/api/activity status=200 duration_ms=2.2
+INFO:parkflow:request_id=0f9da48defc19bea method=GET path=/api/slots status=200 duration_ms=4.7
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:57:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:57:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:57:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=1327291f358ce958 method=GET path=/api/slots status=200 duration_ms=6.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:57:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=3c769c7fdd455e4d method=GET path=/api/activity status=200 duration_ms=4.6
+INFO:parkflow:request_id=6ff6835c9fe841ff method=GET path=/api/slots status=200 duration_ms=7.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:58:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:58:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=229cfe554d96014d method=GET path=/api/activity status=200 duration_ms=4.8
+INFO:parkflow:request_id=8bf29691a40f0f11 method=GET path=/api/slots status=200 duration_ms=6.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:58:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:58:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=5d1a1994737451a8 method=GET path=/api/activity status=200 duration_ms=3.6
+INFO:parkflow:request_id=f17c5c9607fb84fe method=GET path=/api/activity status=200 duration_ms=2.4
+INFO:parkflow:request_id=06311bbc18960526 method=GET path=/api/slots status=200 duration_ms=4.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:59:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:59:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:59:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=e208c428356202d7 method=GET path=/api/slots status=200 duration_ms=6.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 19:59:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=3b785fd9c96c38fe method=GET path=/api/activity status=200 duration_ms=4.7
+INFO:parkflow:request_id=3f33ecacdae1955f method=GET path=/api/slots status=200 duration_ms=8.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:00:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:00:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=a94b808dc29979c9 method=GET path=/api/activity status=200 duration_ms=5.4
+INFO:parkflow:request_id=91f12c76ded6168f method=GET path=/api/slots status=200 duration_ms=8.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:00:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:00:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=9fb1e464d90cbd2c method=GET path=/api/activity status=200 duration_ms=5.4
+INFO:parkflow:request_id=4bd13e2846f05563 method=GET path=/api/activity status=200 duration_ms=2.8
+INFO:parkflow:request_id=6c9b031ece090cb1 method=GET path=/api/slots status=200 duration_ms=4.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:01:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:01:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:01:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=5018b7633d23e51b method=GET path=/api/slots status=200 duration_ms=3.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:01:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=49185a67ce6fd622 method=GET path=/api/activity status=200 duration_ms=2.4
+INFO:parkflow:request_id=bd00aff915a89c08 method=GET path=/api/slots status=200 duration_ms=5.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:02:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:02:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=7667859a8aca467a method=GET path=/api/activity status=200 duration_ms=2.6
+INFO:parkflow:request_id=9b63ac69fcf3aef7 method=GET path=/api/slots status=200 duration_ms=4.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:02:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:02:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=cf737cdb3caa1470 method=GET path=/api/activity status=200 duration_ms=3.9
+INFO:parkflow:request_id=e3d4742a93f6f87f method=GET path=/api/activity status=200 duration_ms=3.0
+INFO:parkflow:request_id=76b2c20bf3907cea method=GET path=/api/slots status=200 duration_ms=5.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:03:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:03:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:03:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=09fe653159e36b6d method=GET path=/api/slots status=200 duration_ms=3.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:03:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=aebeda3c13e2ffe0 method=GET path=/api/activity status=200 duration_ms=4.0
+INFO:parkflow:request_id=4b7543bb2ffe6d96 method=GET path=/api/slots status=200 duration_ms=7.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:04:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:04:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=f259dd1a61b385fd method=GET path=/api/activity status=200 duration_ms=5.3
+INFO:parkflow:request_id=03e067a401d7dfc7 method=GET path=/api/slots status=200 duration_ms=8.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:04:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:04:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=790f1d77894a6826 method=GET path=/api/activity status=200 duration_ms=5.8
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:05:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=7fca187373d1d60a method=GET path=/api/activity status=200 duration_ms=2.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:05:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=cbdb49a382e6f25e method=GET path=/api/slots status=200 duration_ms=9.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:05:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=0004f839cb5d5ca9 method=GET path=/api/slots status=200 duration_ms=6.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:05:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=d7d193ce44ecb186 method=GET path=/api/activity status=200 duration_ms=2.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:06:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=617f1d0e6f1edb18 method=GET path=/api/slots status=200 duration_ms=7.0
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:06:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=5cd0547c47dbe602 method=GET path=/api/activity status=200 duration_ms=4.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:06:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=64ade45d5df60eb1 method=GET path=/api/slots status=200 duration_ms=9.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:06:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=ac799ded0d44d934 method=GET path=/api/activity status=200 duration_ms=4.9
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:07:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=3049c05a39c50ebc method=GET path=/api/activity status=200 duration_ms=3.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:07:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=9d0c87d64678d03e method=GET path=/api/slots status=200 duration_ms=9.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:07:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=39cb2b08ca424e8a method=GET path=/api/slots status=200 duration_ms=6.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:07:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=5ec78f470cd7b9a3 method=GET path=/api/activity status=200 duration_ms=2.2
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:08:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=6f5644263f0453ac method=GET path=/api/slots status=200 duration_ms=5.7
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:08:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=186b829ff9d5b738 method=GET path=/api/activity status=200 duration_ms=2.1
+INFO:parkflow:request_id=3debc95dfa04643d method=GET path=/api/slots status=200 duration_ms=4.2
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:08:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:08:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=a1e411db780b8d17 method=GET path=/api/activity status=200 duration_ms=6.7
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:09:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=aee99c32037d13a5 method=GET path=/api/activity status=200 duration_ms=3.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:09:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=588eef6cce70b47a method=GET path=/api/slots status=200 duration_ms=9.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:09:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=c600c7a7831a9bbc method=GET path=/api/slots status=200 duration_ms=6.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:09:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=aa1f9f3ffe72c0f0 method=GET path=/api/activity status=200 duration_ms=2.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:10:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=e83a3b04051d7f59 method=GET path=/api/slots status=200 duration_ms=5.6
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:10:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=aa43468527e26e36 method=GET path=/api/activity status=200 duration_ms=5.2
+INFO:parkflow:request_id=50a7e146c471b732 method=GET path=/api/slots status=200 duration_ms=8.4
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:10:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:10:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=35c4dcb0b32baf89 method=GET path=/api/activity status=200 duration_ms=4.0
+INFO:parkflow:request_id=6e4173282d68e8a3 method=GET path=/api/activity status=200 duration_ms=3.5
+INFO:parkflow:request_id=9cb0ab427785d914 method=GET path=/api/slots status=200 duration_ms=6.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:11:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:11:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:11:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=a20cb32606f18ca8 method=GET path=/api/slots status=200 duration_ms=6.3
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:11:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=f5f7cb418ec6ecfb method=GET path=/api/activity status=200 duration_ms=2.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:12:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:parkflow:request_id=fceea97f36e553e1 method=GET path=/api/slots status=200 duration_ms=6.5
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:12:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=f077b624d752975f method=GET path=/api/activity status=200 duration_ms=2.0
+INFO:parkflow:request_id=3a107768fb304691 method=GET path=/api/slots status=200 duration_ms=4.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:12:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:12:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=1bf772be23867c38 method=GET path=/api/activity status=200 duration_ms=5.5
+INFO:parkflow:request_id=54f5092fef55f5ab method=GET path=/api/activity status=200 duration_ms=2.6
+INFO:parkflow:request_id=af234769a963ec50 method=GET path=/api/slots status=200 duration_ms=5.1
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:13:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:13:37] "GET /api/activity HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:13:37] "GET /api/slots HTTP/1.1" 200 -
+INFO:parkflow:request_id=b22e5138ecac6fbf method=GET path=/api/slots status=200 duration_ms=4.2
+INFO:werkzeug:127.0.0.1 - - [27/Sep/2026 20:13:37] "GET /api/slots HTTP/1.1" 200 -
